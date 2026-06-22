@@ -14,16 +14,15 @@ import Gallery from "./pages/Gallery";
 import AdminLogin from "./pages/admin/Login";
 import Dashboard from "./pages/admin/Dashboard";
 import Galleries from "./pages/admin/Galleries";
+import PortfolioAdmin from "./pages/admin/Portfolio";
 import Inquiries from "./pages/admin/Inquiries";
 
-// Scroll to top on route change
 function ScrollToTop() {
   const { pathname } = useLocation();
   useEffect(() => { window.scrollTo(0, 0); }, [pathname]);
   return null;
 }
 
-// Load fonts once
 function FontLoader() {
   useEffect(() => {
     const link = document.createElement("link");
@@ -34,8 +33,7 @@ function FontLoader() {
   return null;
 }
 
-// Pages that should NOT show the main nav
-const NO_NAV_PATHS = ["/admin", "/admin/login", "/admin/galleries", "/admin/inquiries"];
+const NO_NAV_PATHS = ["/admin", "/admin/login", "/admin/galleries", "/admin/portfolio", "/admin/inquiries"];
 
 function Layout() {
   const { pathname } = useLocation();
@@ -47,31 +45,19 @@ function Layout() {
       <ScrollToTop />
       {showNav && <Nav />}
       <Routes>
-        {/* Public */}
-        <Route path="/"         element={<Home />} />
-        <Route path="/work"     element={<Work />} />
+        <Route path="/" element={<Home />} />
+        <Route path="/work" element={<Work />} />
         <Route path="/services" element={<Services />} />
-        <Route path="/about"    element={<About />} />
-        <Route path="/book"     element={<Book />} />
-        <Route path="/shop"     element={<Shop />} />
-
-        {/* Client gallery */}
+        <Route path="/about" element={<About />} />
+        <Route path="/book" element={<Book />} />
+        <Route path="/shop" element={<Shop />} />
         <Route path="/gallery/:slug" element={<Gallery />} />
-
-        {/* Admin */}
         <Route path="/admin/login" element={<AdminLogin />} />
         <Route path="/admin" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
         <Route path="/admin/galleries" element={<ProtectedRoute><Galleries /></ProtectedRoute>} />
+        <Route path="/admin/portfolio" element={<ProtectedRoute><PortfolioAdmin /></ProtectedRoute>} />
         <Route path="/admin/inquiries" element={<ProtectedRoute><Inquiries /></ProtectedRoute>} />
-
-        {/* 404 */}
-        <Route path="*" element={
-          <div style={{
-            minHeight: "100vh", background: "#0A0A0A",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontFamily: "'Playfair Display', serif", fontSize: "1.5rem", color: "#fff",
-          }}>Page Not Found</div>
-        } />
+        <Route path="*" element={<div style={{ minHeight: "100vh", background: "#0A0A0A", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Playfair Display', serif", fontSize: "1.5rem", color: "#fff" }}>Page Not Found</div>} />
       </Routes>
     </>
   );
