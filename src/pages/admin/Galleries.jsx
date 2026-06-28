@@ -1,119 +1,181 @@
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "../../lib/supabase";
-import { COLORS } from "../../lib/constants";
-import { AdminNav } from "./Dashboard";
 import { Spinner } from "../../components/UI";
+import { COLORS } from "../../lib/constants";
+import { supabase } from "../../lib/supabase";
+import { AdminNav } from "./Dashboard";
 
-function compressImage(file, maxWidth = 800, quality = 0.78) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      const scale = Math.min(1, maxWidth / img.width);
-      const canvas = document.createElement("canvas");
-      canvas.width = img.width * scale;
-      canvas.height = img.height * scale;
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob(
-        (blob) => {
-          URL.revokeObjectURL(url);
-          resolve(blob);
-        },
-        "image/jpeg",
-        quality,
-      );
-    };
-    img.src = url;
+const STATUS_OPTIONS = ["draft", "published", "archived"];
+
+function slugify(value = "") {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function formatDate(value) {
+  if (!value) return "No event date";
+
+  const parsed = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return value;
+
+  return parsed.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
   });
 }
+
+function StatusBadge({ status }) {
+  const normalized = status || "draft";
+  const color =
+    normalized === "published"
+      ? "#4ade80"
+      : normalized === "archived"
+        ? COLORS.muted
+        : COLORS.gold;
+
+  return (
+    <span
+      style={{
+        border: `1px solid ${color}`,
+        color,
+        borderRadius: 999,
+        padding: "4px 10px",
+        fontFamily: "'Inter', sans-serif",
+        fontSize: 10,
+        fontWeight: 700,
+        letterSpacing: "0.12em",
+        textTransform: "uppercase",
+      }}
+    >
+      {normalized}
+    </span>
+  );
+}
+
+function FieldLabel({ children }) {
+  return (
+    <span
+      style={{
+        display: "block",
+        marginBottom: 6,
+        fontFamily: "'Inter', sans-serif",
+        fontSize: 10,
+        fontWeight: 800,
+        letterSpacing: "0.13em",
+        textTransform: "uppercase",
+        color: COLORS.muted,
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+const inputStyle = {
+  width: "100%",
+  boxSizing: "border-box",
+  background: "rgba(255,255,255,0.03)",
+  border: `1px solid ${COLORS.border}`,
+  color: COLORS.white,
+  fontFamily: "'Inter', sans-serif",
+  fontSize: 13,
+  padding: "12px 14px",
+  outline: "none",
+};
+
+const secondaryButton = {
+  background: "transparent",
+  border: `1px solid ${COLORS.border}`,
+  color: COLORS.white,
+  cursor: "pointer",
+  fontFamily: "'Inter', sans-serif",
+  fontSize: 10,
+  fontWeight: 800,
+  letterSpacing: "0.12em",
+  padding: "10px 14px",
+  textTransform: "uppercase",
+};
+
+const primaryButton = {
+  ...secondaryButton,
+  background: COLORS.gold,
+  border: "none",
+  color: COLORS.bg,
+};
 
 function CreateGalleryModal({ onClose, onCreated }) {
   const [form, setForm] = useState({
     title: "",
-    client_name: "",
     slug: "",
-    access_type: "password",
-    password: "",
-    download_pin: "",
-    max_downloads: "0",
-    resolution: "full",
-    format: "original",
+    client_name: "",
+    client_email: "",
+    event_date: "",
+    description: "",
+    status: "draft",
   });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
 
-  const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
+  const set = (key, value) => setForm((current) => ({ ...current, [key]: value }));
 
-  const autoSlug = (title) =>
-    title
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/(^-|-$)/g, "");
+  const canCreate = useMemo(
+    () => Boolean(form.title.trim() && form.slug.trim()),
+    [form.slug, form.title],
+  );
 
-  const handleCreate = async () => {
-    if (!form.title || !form.slug) {
-      setError("Title and slug required.");
+  async function handleCreate() {
+    if (!canCreate) {
+      setError("Gallery title and URL slug are required.");
       return;
     }
-    if (form.access_type === "password" && !form.password) {
-      setError("Password required for protected galleries.");
-      return;
-    }
-    setLoading(true);
-    const { data, error: err } = await supabase
-      .from("galleries")
-      .insert([
-        {
-          title: form.title,
-          client_name: form.client_name,
-          slug: form.slug,
-          access_type: form.access_type,
-          password: form.access_type === "password" ? form.password : null,
-          download_pin: form.download_pin || null,
-          max_downloads: parseInt(form.max_downloads) || 0,
-          resolution: form.resolution,
-          format: form.format,
-        },
-      ])
-      .select()
+
+    setSaving(true);
+    setError("");
+
+    const { data: gallery, error: galleryError } = await supabase
+      .from("client_galleries")
+      .insert({
+        title: form.title.trim(),
+        slug: form.slug.trim(),
+        client_name: form.client_name.trim() || null,
+        client_email: form.client_email.trim() || null,
+        event_date: form.event_date || null,
+        description: form.description.trim() || null,
+        status: form.status,
+      })
+      .select("*")
       .single();
-    setLoading(false);
-    if (err) {
-      setError(err.message);
+
+    if (galleryError) {
+      setSaving(false);
+      setError(galleryError.message);
       return;
     }
-    onCreated(data);
-  };
 
-  const inputStyle = {
-    background: "transparent",
-    border: `1px solid ${COLORS.border}`,
-    padding: "11px 14px",
-    color: COLORS.white,
-    fontFamily: "'Inter', sans-serif",
-    fontWeight: 300,
-    fontSize: "0.88rem",
-    outline: "none",
-    width: "100%",
-    boxSizing: "border-box",
-  };
-  const labelStyle = {
-    fontFamily: "'Inter', sans-serif",
-    fontWeight: 400,
-    fontSize: "9px",
-    letterSpacing: "0.14em",
-    textTransform: "uppercase",
-    color: COLORS.muted,
-    marginBottom: "5px",
-    display: "block",
-  };
-  const selectStyle = {
-    ...inputStyle,
-    background: "#0a0a0a",
-    cursor: "pointer",
-  };
+    const { error: sectionError } = await supabase
+      .from("client_gallery_sections")
+      .insert({
+        gallery_id: gallery.id,
+        title: "Highlights",
+        display_order: 0,
+        is_visible: true,
+      });
+
+    setSaving(false);
+
+    if (sectionError) {
+      setError(
+        `Gallery was created, but the default Highlights section failed: ${sectionError.message}`,
+      );
+      return;
+    }
+
+    onCreated(gallery);
+  }
 
   return (
     <div
@@ -121,7 +183,7 @@ function CreateGalleryModal({ onClose, onCreated }) {
         position: "fixed",
         inset: 0,
         zIndex: 200,
-        background: "rgba(0,0,0,0.85)",
+        background: "rgba(0,0,0,0.82)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -130,521 +192,183 @@ function CreateGalleryModal({ onClose, onCreated }) {
     >
       <div
         style={{
-          background: "#0a0a0a",
-          border: `1px solid ${COLORS.border}`,
-          padding: "2rem",
           width: "100%",
-          maxWidth: "560px",
+          maxWidth: 720,
           maxHeight: "90vh",
           overflowY: "auto",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: "2rem",
-          }}
-        >
-          <div
-            style={{
-              fontFamily: "'Playfair Display', serif",
-              fontWeight: 600,
-              fontSize: "1.3rem",
-              color: COLORS.white,
-            }}
-          >
-            New Gallery
-          </div>
-          <button
-            onClick={onClose}
-            style={{
-              background: "none",
-              border: "none",
-              color: COLORS.muted,
-              cursor: "pointer",
-              fontSize: "1.2rem",
-            }}
-          >
-            ✕
-          </button>
-        </div>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-          <div>
-            <label style={labelStyle}>Gallery Title *</label>
-            <input
-              style={inputStyle}
-              placeholder="Martinez Wedding 2025"
-              value={form.title}
-              onChange={(e) => {
-                set("title", e.target.value);
-                set("slug", autoSlug(e.target.value));
-              }}
-              onFocus={(e) => (e.target.style.borderColor = COLORS.gold)}
-              onBlur={(e) => (e.target.style.borderColor = COLORS.border)}
-            />
-          </div>
-          <div>
-            <label style={labelStyle}>Client Name</label>
-            <input
-              style={inputStyle}
-              placeholder="Sofia Martinez"
-              value={form.client_name}
-              onChange={(e) => set("client_name", e.target.value)}
-              onFocus={(e) => (e.target.style.borderColor = COLORS.gold)}
-              onBlur={(e) => (e.target.style.borderColor = COLORS.border)}
-            />
-          </div>
-          <div>
-            <label style={labelStyle}>URL Slug * (auto-generated)</label>
-            <input
-              style={inputStyle}
-              placeholder="martinez-wedding-2025"
-              value={form.slug}
-              onChange={(e) => set("slug", autoSlug(e.target.value))}
-              onFocus={(e) => (e.target.style.borderColor = COLORS.gold)}
-              onBlur={(e) => (e.target.style.borderColor = COLORS.border)}
-            />
-            <div
-              style={{
-                fontFamily: "'Inter', sans-serif",
-                fontSize: "11px",
-                color: COLORS.muted,
-                marginTop: "4px",
-              }}
-            >
-              estanleravisuals.com/gallery/{form.slug || "..."}
-            </div>
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: "1rem",
-            }}
-          >
-            <div>
-              <label style={labelStyle}>Access Type</label>
-              <select
-                style={selectStyle}
-                value={form.access_type}
-                onChange={(e) => set("access_type", e.target.value)}
-              >
-                <option value="public">Public link</option>
-                <option value="password">Password protected</option>
-              </select>
-            </div>
-            <div>
-              <label style={labelStyle}>
-                {form.access_type === "password"
-                  ? "Gallery Password *"
-                  : "No Password"}
-              </label>
-              <input
-                style={{
-                  ...inputStyle,
-                  opacity: form.access_type === "public" ? 0.3 : 1,
-                }}
-                disabled={form.access_type === "public"}
-                type="password"
-                placeholder="gallery-password"
-                value={form.password}
-                onChange={(e) => set("password", e.target.value)}
-                onFocus={(e) => (e.target.style.borderColor = COLORS.gold)}
-                onBlur={(e) => (e.target.style.borderColor = COLORS.border)}
-              />
-            </div>
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: "1rem",
-            }}
-          >
-            <div>
-              <label style={labelStyle}>Download PIN (optional)</label>
-              <input
-                style={inputStyle}
-                placeholder="1234"
-                value={form.download_pin}
-                onChange={(e) => set("download_pin", e.target.value)}
-                onFocus={(e) => (e.target.style.borderColor = COLORS.gold)}
-                onBlur={(e) => (e.target.style.borderColor = COLORS.border)}
-              />
-            </div>
-            <div>
-              <label style={labelStyle}>Max Downloads (0 = unlimited)</label>
-              <input
-                style={inputStyle}
-                type="number"
-                min="0"
-                placeholder="0"
-                value={form.max_downloads}
-                onChange={(e) => set("max_downloads", e.target.value)}
-                onFocus={(e) => (e.target.style.borderColor = COLORS.gold)}
-                onBlur={(e) => (e.target.style.borderColor = COLORS.border)}
-              />
-            </div>
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: "1rem",
-            }}
-          >
-            <div>
-              <label style={labelStyle}>Download Resolution</label>
-              <select
-                style={selectStyle}
-                value={form.resolution}
-                onChange={(e) => set("resolution", e.target.value)}
-              >
-                <option value="full">Full resolution</option>
-                <option value="web">Web size (2048px)</option>
-                <option value="small">Small (1200px)</option>
-              </select>
-            </div>
-            <div>
-              <label style={labelStyle}>Download Format</label>
-              <select
-                style={selectStyle}
-                value={form.format}
-                onChange={(e) => set("format", e.target.value)}
-              >
-                <option value="original">Original format</option>
-                <option value="jpg">JPG</option>
-                <option value="png">PNG</option>
-              </select>
-            </div>
-          </div>
-
-          {error && (
-            <div
-              style={{
-                fontFamily: "'Inter', sans-serif",
-                fontSize: "0.82rem",
-                color: "#e05c5c",
-              }}
-            >
-              {error}
-            </div>
-          )}
-
-          <div style={{ display: "flex", gap: "1rem", marginTop: "0.5rem" }}>
-            <button
-              onClick={handleCreate}
-              disabled={loading}
-              style={{
-                flex: 1,
-                fontFamily: "'Inter', sans-serif",
-                fontSize: "11px",
-                letterSpacing: "0.12em",
-                textTransform: "uppercase",
-                fontWeight: 500,
-                color: COLORS.bg,
-                background: loading ? "#a08040" : COLORS.gold,
-                border: "none",
-                padding: "13px",
-                cursor: loading ? "not-allowed" : "pointer",
-              }}
-            >
-              {loading ? "Creating..." : "Create Gallery"}
-            </button>
-            <button
-              onClick={onClose}
-              style={{
-                fontFamily: "'Inter', sans-serif",
-                fontSize: "11px",
-                letterSpacing: "0.12em",
-                textTransform: "uppercase",
-                color: COLORS.muted,
-                background: "transparent",
-                border: `1px solid ${COLORS.border}`,
-                padding: "13px 20px",
-                cursor: "pointer",
-              }}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function UploadModal({ gallery, onClose }) {
-  const [files, setFiles] = useState([]);
-  const [uploading, setUploading] = useState(false);
-  const [progress, setProgress] = useState([]);
-  const inputRef = useRef();
-
-  const handleFiles = (e) => {
-    const selected = Array.from(e.target.files).filter((f) =>
-      f.type.startsWith("image/"),
-    );
-    setFiles(selected);
-    setProgress(selected.map((f) => ({ name: f.name, status: "pending" })));
-  };
-
-  const handleUpload = async () => {
-    if (!files.length) return;
-    setUploading(true);
-
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      setProgress((p) =>
-        p.map((item, idx) =>
-          idx === i ? { ...item, status: "uploading" } : item,
-        ),
-      );
-
-      try {
-        // Upload original
-        const origPath = `${gallery.slug}/originals/${file.name}`;
-        await supabase.storage
-          .from("client-galleries")
-          .upload(origPath, file, { upsert: true });
-
-        // Compress thumbnail
-        const thumb = await compressImage(file, 800, 0.78);
-        const thumbPath = `${gallery.slug}/thumbnails/${file.name}`;
-        await supabase.storage
-          .from("client-galleries")
-          .upload(thumbPath, thumb, {
-            contentType: "image/jpeg",
-            upsert: true,
-          });
-
-        // Save to DB
-        await supabase.from("gallery_photos").insert([
-          {
-            gallery_id: gallery.id,
-            storage_path: origPath,
-            filename: file.name,
-            display_order: i,
-          },
-        ]);
-
-        setProgress((p) =>
-          p.map((item, idx) =>
-            idx === i ? { ...item, status: "done" } : item,
-          ),
-        );
-      } catch {
-        setProgress((p) =>
-          p.map((item, idx) =>
-            idx === i ? { ...item, status: "error" } : item,
-          ),
-        );
-      }
-    }
-    setUploading(false);
-  };
-
-  return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 200,
-        background: "rgba(0,0,0,0.85)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "1rem",
-      }}
-    >
-      <div
-        style={{
-          background: "#0a0a0a",
+          background: COLORS.surfaceDark || "#060606",
           border: `1px solid ${COLORS.border}`,
-          padding: "2rem",
-          width: "100%",
-          maxWidth: "500px",
+          boxShadow: "0 30px 80px rgba(0,0,0,0.45)",
         }}
       >
         <div
           style={{
             display: "flex",
-            justifyContent: "space-between",
             alignItems: "center",
-            marginBottom: "1.5rem",
+            justifyContent: "space-between",
+            borderBottom: `1px solid ${COLORS.border}`,
+            padding: "1.25rem 1.5rem",
           }}
         >
-          <div
-            style={{
-              fontFamily: "'Playfair Display', serif",
-              fontSize: "1.2rem",
-              color: COLORS.white,
-            }}
-          >
-            Upload to:{" "}
-            <span style={{ color: COLORS.gold }}>{gallery.title}</span>
+          <div>
+            <div
+              style={{
+                color: COLORS.gold,
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 10,
+                fontWeight: 800,
+                letterSpacing: "0.16em",
+                textTransform: "uppercase",
+              }}
+            >
+              New Collection
+            </div>
+            <h2
+              style={{
+                color: COLORS.white,
+                fontFamily: "'Playfair Display', serif",
+                fontSize: "1.55rem",
+                margin: "4px 0 0",
+              }}
+            >
+              Create client gallery
+            </h2>
           </div>
-          <button
-            onClick={onClose}
-            style={{
-              background: "none",
-              border: "none",
-              color: COLORS.muted,
-              cursor: "pointer",
-              fontSize: "1.2rem",
-            }}
-          >
-            ✕
+          <button onClick={onClose} style={secondaryButton}>
+            Close
           </button>
         </div>
 
         <div
-          onClick={() => inputRef.current?.click()}
           style={{
-            border: `2px dashed ${COLORS.border}`,
-            padding: "3rem",
-            textAlign: "center",
-            cursor: "pointer",
-            marginBottom: "1.5rem",
-            transition: "border-color 0.2s",
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+            gap: "1rem",
+            padding: "1.5rem",
           }}
-          onMouseEnter={(e) =>
-            (e.currentTarget.style.borderColor = COLORS.gold)
-          }
-          onMouseLeave={(e) =>
-            (e.currentTarget.style.borderColor = COLORS.border)
-          }
         >
-          <div style={{ fontSize: "2rem", marginBottom: "0.75rem" }}>📸</div>
-          <div
-            style={{
-              fontFamily: "'Inter', sans-serif",
-              fontWeight: 300,
-              fontSize: "0.88rem",
-              color: COLORS.muted,
-            }}
-          >
-            {files.length > 0
-              ? `${files.length} file${files.length > 1 ? "s" : ""} selected`
-              : "Click to select photos"}
-          </div>
-          <input
-            ref={inputRef}
-            type="file"
-            multiple
-            accept="image/*"
-            onChange={handleFiles}
-            style={{ display: "none" }}
-          />
+          <label>
+            <FieldLabel>Gallery Title *</FieldLabel>
+            <input
+              value={form.title}
+              onChange={(event) => {
+                const title = event.target.value;
+                setForm((current) => ({
+                  ...current,
+                  title,
+                  slug: current.slug === slugify(current.title) ? slugify(title) : current.slug,
+                }));
+              }}
+              placeholder="Martinez Wedding"
+              style={inputStyle}
+            />
+          </label>
+
+          <label>
+            <FieldLabel>URL Slug *</FieldLabel>
+            <input
+              value={form.slug}
+              onChange={(event) => set("slug", slugify(event.target.value))}
+              placeholder="martinez-wedding"
+              style={inputStyle}
+            />
+          </label>
+
+          <label>
+            <FieldLabel>Client Name</FieldLabel>
+            <input
+              value={form.client_name}
+              onChange={(event) => set("client_name", event.target.value)}
+              placeholder="Sofia Martinez"
+              style={inputStyle}
+            />
+          </label>
+
+          <label>
+            <FieldLabel>Client Email</FieldLabel>
+            <input
+              type="email"
+              value={form.client_email}
+              onChange={(event) => set("client_email", event.target.value)}
+              placeholder="client@email.com"
+              style={inputStyle}
+            />
+          </label>
+
+          <label>
+            <FieldLabel>Event Date</FieldLabel>
+            <input
+              type="date"
+              value={form.event_date}
+              onChange={(event) => set("event_date", event.target.value)}
+              style={inputStyle}
+            />
+          </label>
+
+          <label>
+            <FieldLabel>Status</FieldLabel>
+            <select
+              value={form.status}
+              onChange={(event) => set("status", event.target.value)}
+              style={inputStyle}
+            >
+              {STATUS_OPTIONS.map((status) => (
+                <option key={status} value={status}>
+                  {status.charAt(0).toUpperCase() + status.slice(1)}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label style={{ gridColumn: "1 / -1" }}>
+            <FieldLabel>Description</FieldLabel>
+            <textarea
+              value={form.description}
+              onChange={(event) => set("description", event.target.value)}
+              placeholder="Private client collection notes, event context, or gallery intro."
+              rows={4}
+              style={{ ...inputStyle, resize: "vertical" }}
+            />
+          </label>
         </div>
 
-        {progress.length > 0 && (
+        {error && (
           <div
             style={{
-              maxHeight: "200px",
-              overflowY: "auto",
-              border: `1px solid ${COLORS.border}`,
-              marginBottom: "1.5rem",
+              margin: "0 1.5rem 1rem",
+              border: "1px solid rgba(224,92,92,0.35)",
+              color: "#ff8b8b",
+              fontFamily: "'Inter', sans-serif",
+              fontSize: 13,
+              padding: "12px 14px",
             }}
           >
-            {progress.map((p, i) => (
-              <div
-                key={i}
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  padding: "8px 12px",
-                  borderBottom:
-                    i < progress.length - 1
-                      ? `1px solid ${COLORS.border}`
-                      : "none",
-                }}
-              >
-                <div
-                  style={{
-                    fontFamily: "'Inter', sans-serif",
-                    fontSize: "0.8rem",
-                    color: COLORS.muted,
-                    flex: 1,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {p.name}
-                </div>
-                <div
-                  style={{
-                    fontFamily: "'Inter', sans-serif",
-                    fontSize: "10px",
-                    color:
-                      p.status === "done"
-                        ? "#4ade80"
-                        : p.status === "error"
-                          ? "#e05c5c"
-                          : p.status === "uploading"
-                            ? COLORS.gold
-                            : COLORS.muted,
-                    marginLeft: "1rem",
-                    flexShrink: 0,
-                  }}
-                >
-                  {p.status === "done"
-                    ? "✓ Done"
-                    : p.status === "error"
-                      ? "✕ Error"
-                      : p.status === "uploading"
-                        ? "Uploading..."
-                        : "Pending"}
-                </div>
-              </div>
-            ))}
+            {error}
           </div>
         )}
 
-        <div style={{ display: "flex", gap: "1rem" }}>
-          <button
-            onClick={handleUpload}
-            disabled={uploading || files.length === 0}
-            style={{
-              flex: 1,
-              fontFamily: "'Inter', sans-serif",
-              fontSize: "11px",
-              letterSpacing: "0.12em",
-              textTransform: "uppercase",
-              fontWeight: 500,
-              color: COLORS.bg,
-              background:
-                uploading || files.length === 0 ? "#a08040" : COLORS.gold,
-              border: "none",
-              padding: "13px",
-              cursor:
-                uploading || files.length === 0 ? "not-allowed" : "pointer",
-            }}
-          >
-            {uploading ? "Uploading..." : "Upload Photos"}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "flex-end",
+            gap: "0.75rem",
+            borderTop: `1px solid ${COLORS.border}`,
+            padding: "1.25rem 1.5rem",
+          }}
+        >
+          <button onClick={onClose} style={secondaryButton}>
+            Cancel
           </button>
           <button
-            onClick={onClose}
+            onClick={handleCreate}
+            disabled={saving || !canCreate}
             style={{
-              fontFamily: "'Inter', sans-serif",
-              fontSize: "11px",
-              letterSpacing: "0.12em",
-              textTransform: "uppercase",
-              color: COLORS.muted,
-              background: "transparent",
-              border: `1px solid ${COLORS.border}`,
-              padding: "13px 20px",
-              cursor: "pointer",
+              ...primaryButton,
+              cursor: saving || !canCreate ? "not-allowed" : "pointer",
+              opacity: saving || !canCreate ? 0.55 : 1,
             }}
           >
-            Done
+            {saving ? "Creating..." : "Create Gallery"}
           </button>
         </div>
       </div>
@@ -656,266 +380,248 @@ export default function Galleries() {
   const navigate = useNavigate();
   const [galleries, setGalleries] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [showCreate, setShowCreate] = useState(false);
-  const [uploadGallery, setUploadGallery] = useState(null);
-
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    navigate("/admin/login");
-  };
 
   useEffect(() => {
     fetchGalleries();
   }, []);
 
   async function fetchGalleries() {
-    const { data } = await supabase
-      .from("galleries")
+    setLoading(true);
+    setError("");
+
+    const { data, error: fetchError } = await supabase
+      .from("client_galleries")
       .select("*")
       .order("created_at", { ascending: false });
-    setGalleries(data || []);
+
+    if (fetchError) {
+      setError(fetchError.message);
+      setGalleries([]);
+    } else {
+      setGalleries(data || []);
+    }
+
     setLoading(false);
   }
 
-  const handleDelete = async (id) => {
-    if (!confirm("Delete this gallery? This cannot be undone.")) return;
-    await supabase.from("galleries").delete().eq("id", id);
-    setGalleries((p) => p.filter((g) => g.id !== id));
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    navigate("/admin/login");
   };
 
-  const copyLink = (slug) => {
-    navigator.clipboard.writeText(
-      `https://estanleravisuals.com/gallery/${slug}`,
-    );
-  };
+  function openGallery(galleryId) {
+    navigate(`/admin/galleries/${galleryId}`);
+  }
+
+  function copyPreviewPath(slug) {
+    if (!slug) return;
+    navigator.clipboard?.writeText(`${window.location.origin}/gallery/${slug}`);
+  }
 
   return (
     <div style={{ minHeight: "100vh", background: COLORS.bg }}>
       <AdminNav onSignOut={handleSignOut} />
-      <div style={{ padding: "2.5rem 2rem" }}>
+
+      <main style={{ padding: "2.5rem 2rem" }}>
         <div
           style={{
             display: "flex",
+            alignItems: "flex-start",
             justifyContent: "space-between",
-            alignItems: "center",
+            gap: "1.5rem",
             marginBottom: "2rem",
           }}
         >
-          <h1
-            style={{
-              fontFamily: "'Playfair Display', serif",
-              fontWeight: 700,
-              fontSize: "1.8rem",
-              color: COLORS.white,
-            }}
-          >
-            Galleries
-          </h1>
-          <button
-            onClick={() => setShowCreate(true)}
-            style={{
-              fontFamily: "'Inter', sans-serif",
-              fontSize: "11px",
-              letterSpacing: "0.12em",
-              textTransform: "uppercase",
-              fontWeight: 500,
-              color: COLORS.bg,
-              background: COLORS.gold,
-              border: "none",
-              padding: "11px 22px",
-              cursor: "pointer",
-            }}
-          >
+          <div>
+            <div
+              style={{
+                color: COLORS.gold,
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 10,
+                fontWeight: 800,
+                letterSpacing: "0.16em",
+                marginBottom: 8,
+                textTransform: "uppercase",
+              }}
+            >
+              Client Collections
+            </div>
+            <h1
+              style={{
+                color: COLORS.white,
+                fontFamily: "'Playfair Display', serif",
+                fontSize: "2rem",
+                fontWeight: 700,
+                margin: 0,
+              }}
+            >
+              Galleries
+            </h1>
+            <p
+              style={{
+                color: COLORS.muted,
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 13,
+                lineHeight: 1.7,
+                margin: "0.65rem 0 0",
+                maxWidth: 620,
+              }}
+            >
+              Create Pixieset-style client collections from the existing portfolio image library. Uploading and asset optimization stay in Portfolio Manager.
+            </p>
+          </div>
+
+          <button onClick={() => setShowCreate(true)} style={primaryButton}>
             + New Gallery
           </button>
         </div>
 
-        {loading && <Spinner />}
-
-        {!loading && galleries.length === 0 && (
+        {error && (
           <div
             style={{
-              textAlign: "center",
-              padding: "4rem",
-              border: `1px dashed ${COLORS.border}`,
+              border: "1px solid rgba(224,92,92,0.35)",
+              color: "#ff8b8b",
+              fontFamily: "'Inter', sans-serif",
+              fontSize: 13,
+              marginBottom: "1.5rem",
+              padding: "12px 14px",
             }}
           >
-            <div
-              style={{
-                fontFamily: "'Inter', sans-serif",
-                fontSize: "0.9rem",
-                color: COLORS.muted,
-              }}
-            >
-              No galleries yet. Create one to get started.
-            </div>
+            {error}
+          </div>
+        )}
+
+        {loading && <Spinner />}
+
+        {!loading && !galleries.length && (
+          <div
+            style={{
+              border: `1px dashed ${COLORS.border}`,
+              color: COLORS.muted,
+              fontFamily: "'Inter', sans-serif",
+              padding: "4rem 2rem",
+              textAlign: "center",
+            }}
+          >
+            No client galleries yet. Create one to start building a collection workspace.
           </div>
         )}
 
         {!loading && galleries.length > 0 && (
           <div
             style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "1px",
-              background: COLORS.border,
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+              gap: "1rem",
             }}
           >
-            {galleries.map((g) => (
-              <div
-                key={g.id}
+            {galleries.map((gallery) => (
+              <article
+                key={gallery.id}
                 style={{
-                  background: "#060606",
-                  padding: "1.25rem 1.5rem",
+                  background: COLORS.surfaceDark || "#060606",
+                  border: `1px solid ${COLORS.border}`,
+                  minHeight: 260,
                   display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: "1rem",
-                  flexWrap: "wrap",
+                  flexDirection: "column",
                 }}
               >
-                <div style={{ flex: 1, minWidth: "200px" }}>
+                <button
+                  onClick={() => openGallery(gallery.id)}
+                  style={{
+                    flex: 1,
+                    textAlign: "left",
+                    background: "transparent",
+                    border: "none",
+                    color: "inherit",
+                    cursor: "pointer",
+                    padding: "1.4rem",
+                  }}
+                >
                   <div
                     style={{
-                      fontFamily: "'Playfair Display', serif",
-                      fontWeight: 600,
-                      fontSize: "1rem",
-                      color: COLORS.white,
-                      marginBottom: "3px",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "flex-start",
+                      gap: "1rem",
+                      marginBottom: "1.25rem",
                     }}
                   >
-                    {g.title}
-                  </div>
-                  <div
-                    style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}
-                  >
-                    {g.client_name && (
-                      <span
-                        style={{
-                          fontFamily: "'Inter', sans-serif",
-                          fontSize: "11px",
-                          color: COLORS.muted,
-                        }}
-                      >
-                        {g.client_name}
-                      </span>
-                    )}
+                    <StatusBadge status={gallery.status} />
                     <span
                       style={{
-                        fontFamily: "'Inter', sans-serif",
-                        fontSize: "10px",
-                        letterSpacing: "0.1em",
-                        textTransform: "uppercase",
-                        color:
-                          g.access_type === "public" ? "#4ade80" : COLORS.gold,
-                      }}
-                    >
-                      {g.access_type === "public"
-                        ? "Public"
-                        : "Password Protected"}
-                    </span>
-                    <span
-                      style={{
-                        fontFamily: "'Inter', sans-serif",
-                        fontSize: "11px",
                         color: COLORS.muted,
+                        fontFamily: "'Inter', sans-serif",
+                        fontSize: 11,
                       }}
                     >
-                      /gallery/{g.slug}
+                      {formatDate(gallery.event_date)}
                     </span>
                   </div>
-                </div>
+
+                  <h2
+                    style={{
+                      color: COLORS.white,
+                      fontFamily: "'Playfair Display', serif",
+                      fontSize: "1.35rem",
+                      lineHeight: 1.15,
+                      margin: "0 0 0.75rem",
+                    }}
+                  >
+                    {gallery.title || "Untitled Gallery"}
+                  </h2>
+
+                  <div
+                    style={{
+                      color: COLORS.muted,
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: 13,
+                      lineHeight: 1.7,
+                    }}
+                  >
+                    <div>{gallery.client_name || "No client name"}</div>
+                    <div>{gallery.client_email || "No client email"}</div>
+                    <div style={{ marginTop: 12, color: COLORS.gold }}>
+                      /gallery/{gallery.slug || "draft-link"}
+                    </div>
+                  </div>
+                </button>
+
                 <div
-                  style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}
+                  style={{
+                    borderTop: `1px solid ${COLORS.border}`,
+                    display: "flex",
+                    gap: "0.5rem",
+                    padding: "0.9rem 1rem",
+                  }}
                 >
                   <button
-                    onClick={() => setUploadGallery(g)}
-                    style={{
-                      fontFamily: "'Inter', sans-serif",
-                      fontSize: "10px",
-                      letterSpacing: "0.1em",
-                      textTransform: "uppercase",
-                      color: COLORS.white,
-                      background: "transparent",
-                      border: `1px solid ${COLORS.border}`,
-                      padding: "7px 14px",
-                      cursor: "pointer",
-                    }}
+                    onClick={() => openGallery(gallery.id)}
+                    style={{ ...secondaryButton, flex: 1 }}
                   >
-                    Upload Photos
+                    Open
                   </button>
                   <button
-                    onClick={() => copyLink(g.slug)}
-                    style={{
-                      fontFamily: "'Inter', sans-serif",
-                      fontSize: "10px",
-                      letterSpacing: "0.1em",
-                      textTransform: "uppercase",
-                      color: COLORS.gold,
-                      background: "transparent",
-                      border: `1px solid ${COLORS.border}`,
-                      padding: "7px 14px",
-                      cursor: "pointer",
-                    }}
+                    onClick={() => copyPreviewPath(gallery.slug)}
+                    style={{ ...secondaryButton, flex: 1, color: COLORS.gold }}
                   >
                     Copy Link
                   </button>
-                  <a
-                    href={`/gallery/${g.slug}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{
-                      fontFamily: "'Inter', sans-serif",
-                      fontSize: "10px",
-                      letterSpacing: "0.1em",
-                      textTransform: "uppercase",
-                      color: COLORS.muted,
-                      textDecoration: "none",
-                      border: `1px solid ${COLORS.border}`,
-                      padding: "7px 14px",
-                    }}
-                  >
-                    Preview ↗
-                  </a>
-                  <button
-                    onClick={() => handleDelete(g.id)}
-                    style={{
-                      fontFamily: "'Inter', sans-serif",
-                      fontSize: "10px",
-                      letterSpacing: "0.1em",
-                      textTransform: "uppercase",
-                      color: "#e05c5c",
-                      background: "transparent",
-                      border: `1px solid rgba(224,92,92,0.3)`,
-                      padding: "7px 14px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Delete
-                  </button>
                 </div>
-              </div>
+              </article>
             ))}
           </div>
         )}
-      </div>
+      </main>
 
       {showCreate && (
         <CreateGalleryModal
           onClose={() => setShowCreate(false)}
-          onCreated={(g) => {
-            setGalleries((p) => [g, ...p]);
+          onCreated={(gallery) => {
             setShowCreate(false);
-            setUploadGallery(g);
-          }}
-        />
-      )}
-      {uploadGallery && (
-        <UploadModal
-          gallery={uploadGallery}
-          onClose={() => {
-            setUploadGallery(null);
-            fetchGalleries();
+            navigate(`/admin/galleries/${gallery.id}`);
           }}
         />
       )}
