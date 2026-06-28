@@ -608,11 +608,32 @@ export default function GalleryEditor() {
   const [previewMode, setPreviewMode] = useState("desktop");
   const [newSection, setNewSection] = useState("");
   const [targetSection, setTargetSection] = useState("");
+  const [selectedPhotoIds, setSelectedPhotoIds] = useState([]);
+  const [draggedPhotoId, setDraggedPhotoId] = useState(null);
+  const [contextMenu, setContextMenu] = useState(null);
+  const [moveTargetSectionId, setMoveTargetSectionId] = useState("");
 
   const coverPhoto = useMemo(
     () => photos.find((photo) => photo.id === gallery?.cover_image_id) || photos[0] || null,
     [gallery?.cover_image_id, photos],
   );
+
+  const activeSection = useMemo(
+    () => sections.find((section) => section.id === targetSection) || sections[0] || null,
+    [sections, targetSection],
+  );
+
+  const activeSectionPhotos = useMemo(
+    () => sortByOrder(photos.filter((photo) => photo.section_id === activeSection?.id)),
+    [activeSection?.id, photos],
+  );
+
+  const selectedPhotos = useMemo(
+    () => photos.filter((photo) => selectedPhotoIds.includes(photo.id)),
+    [photos, selectedPhotoIds],
+  );
+
+  const contextPhoto = contextMenu?.photoId ? photos.find((photo) => photo.id === contextMenu.photoId) : null;
 
   useEffect(() => {
     loadWorkspace();
@@ -627,6 +648,10 @@ export default function GalleryEditor() {
 
     return () => window.clearInterval(timer);
   }, [uploading, uploadStartedAt]);
+
+  useEffect(() => {
+    setMoveTargetSectionId(activeSection?.id || "");
+  }, [activeSection?.id]);
 
   async function loadWorkspace() {
     setLoading(true);
@@ -690,6 +715,73 @@ export default function GalleryEditor() {
     setUploadQueue((current) =>
       current.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)),
     );
+  }
+
+  function togglePhotoSelection(photoId, event) {
+    setContextMenu(null);
+
+    if (event?.shiftKey || event?.metaKey || event?.ctrlKey) {
+      setSelectedPhotoIds((current) =>
+        current.includes(photoId) ? current.filter((id) => id !== photoId) : [...current, photoId],
+      );
+      return;
+    }
+
+    setSelectedPhotoIds((current) => (current.length === 1 && current[0] === photoId ? [] : [photoId]));
+  }
+
+  async function persistPhotoOrder(orderedPhotos) {
+    const updates = orderedPhotos.map((photo, index) =>
+      supabase
+        .from("client_gallery_images")
+        .update({ display_order: index })
+        .eq("id", photo.id)
+        .select("*")
+        .single(),
+    );
+
+    const results = await Promise.all(updates);
+    const failed = results.find((result) => result.error);
+
+    if (failed) {
+      setError(failed.error.message);
+      return false;
+    }
+
+    const updatedById = results.reduce((map, result) => ({ ...map, [result.data.id]: result.data }), {});
+    setPhotos((current) =>
+      sortByOrder(current.map((photo) => (updatedById[photo.id] ? updatedById[photo.id] : photo))),
+    );
+    return true;
+  }
+
+  async function reorderDraggedPhoto(dropTargetId) {
+    if (!draggedPhotoId || draggedPhotoId === dropTargetId || !activeSection) return;
+
+    const ordered = [...activeSectionPhotos];
+    const fromIndex = ordered.findIndex((photo) => photo.id === draggedPhotoId);
+    const toIndex = ordered.findIndex((photo) => photo.id === dropTargetId);
+
+    if (fromIndex < 0 || toIndex < 0) return;
+
+    const [movedPhoto] = ordered.splice(fromIndex, 1);
+    ordered.splice(toIndex, 0, movedPhoto);
+    setDraggedPhotoId(null);
+
+    const success = await persistPhotoOrder(ordered);
+    if (success) flash("Photo order updated.");
+  }
+
+  async function moveSelectedToEdge(edge) {
+    if (!selectedPhotoIds.length || !activeSection) return;
+
+    const selectedSet = new Set(selectedPhotoIds);
+    const selected = activeSectionPhotos.filter((photo) => selectedSet.has(photo.id));
+    const remaining = activeSectionPhotos.filter((photo) => !selectedSet.has(photo.id));
+    const nextOrder = edge === "top" ? [...selected, ...remaining] : [...remaining, ...selected];
+
+    const success = await persistPhotoOrder(nextOrder);
+    if (success) flash(edge === "top" ? "Moved selected photos to top." : "Moved selected photos to bottom.");
   }
 
   async function saveGallery() {
@@ -761,7 +853,9 @@ export default function GalleryEditor() {
 
     setSections((current) => sortByOrder([...current, data]));
     setTargetSection(data.id);
+    setMoveTargetSectionId(data.id);
     setNewSection("");
+    setSelectedPhotoIds([]);
     flash("Photo set added.");
   }
 
@@ -802,6 +896,7 @@ export default function GalleryEditor() {
     const existingSectionPhotos = photos.filter((photo) => photo.section_id === sectionId);
     const safeGallerySlug = slugify(gallery.slug || gallery.title || gallery.id);
     const insertedPhotos = [];
+    const failedUploads = [];
     let firstCoverId = gallery.cover_image_id || null;
 
     setUploading(true);
@@ -938,6 +1033,7 @@ export default function GalleryEditor() {
         });
       } catch (uploadError) {
         console.error(uploadError);
+        failedUploads.push(file.name);
         updateQueueItem(index, {
           status: "failed",
           message: uploadError.message || "Upload failed",
@@ -952,11 +1048,9 @@ export default function GalleryEditor() {
     setUploadStartedAt(null);
     setUploading(false);
 
-    const failedCount = uploadQueue.filter((item) => item.status === "failed").length;
-
     flash(
-      failedCount > 0
-        ? `Upload finished with ${failedCount} failed image${failedCount === 1 ? "" : "s"}.`
+      failedUploads.length > 0
+        ? `Upload finished with ${failedUploads.length} failed image${failedUploads.length === 1 ? "" : "s"}.`
         : `Done. Uploaded ${insertedPhotos.length} image${insertedPhotos.length === 1 ? "" : "s"}.`,
     );
 
@@ -977,12 +1071,65 @@ export default function GalleryEditor() {
     }
 
     setPhotos((current) => current.filter((photo) => photo.id !== photoId));
+    setSelectedPhotoIds((current) => current.filter((id) => id !== photoId));
 
     if (gallery.cover_image_id === photoId) {
       setGalleryField("cover_image_id", null);
     }
 
     flash("Photo removed from this client gallery.");
+  }
+
+  async function deleteSelectedPhotos() {
+    if (!selectedPhotoIds.length) return;
+
+    const { error: deleteError } = await supabase
+      .from("client_gallery_images")
+      .delete()
+      .in("id", selectedPhotoIds);
+
+    if (deleteError) {
+      setError(deleteError.message);
+      return;
+    }
+
+    setPhotos((current) => current.filter((photo) => !selectedPhotoIds.includes(photo.id)));
+    if (selectedPhotoIds.includes(gallery.cover_image_id)) setGalleryField("cover_image_id", null);
+    setSelectedPhotoIds([]);
+    setContextMenu(null);
+    flash("Selected photos removed from this gallery.");
+  }
+
+  async function moveSelectedToSection(sectionId) {
+    if (!selectedPhotoIds.length || !sectionId) return;
+
+    const destinationPhotos = photos.filter(
+      (photo) => photo.section_id === sectionId && !selectedPhotoIds.includes(photo.id),
+    );
+
+    const updates = selectedPhotoIds.map((photoId, index) =>
+      supabase
+        .from("client_gallery_images")
+        .update({ section_id: sectionId, display_order: destinationPhotos.length + index })
+        .eq("id", photoId)
+        .select("*")
+        .single(),
+    );
+
+    const results = await Promise.all(updates);
+    const failed = results.find((result) => result.error);
+
+    if (failed) {
+      setError(failed.error.message);
+      return;
+    }
+
+    const updatedById = results.reduce((map, result) => ({ ...map, [result.data.id]: result.data }), {});
+    setPhotos((current) => current.map((photo) => updatedById[photo.id] || photo));
+    setTargetSection(sectionId);
+    setSelectedPhotoIds([]);
+    setContextMenu(null);
+    flash("Selected photos moved to another set.");
   }
 
   async function setCoverImage(photoId, showNotice = true) {
@@ -1002,59 +1149,31 @@ export default function GalleryEditor() {
     if (showNotice) flash("Cover photo updated.");
   }
 
-  async function movePhoto(photo, direction) {
-    const sectionPhotos = sortByOrder(photos.filter((item) => item.section_id === photo.section_id));
-    const index = sectionPhotos.findIndex((item) => item.id === photo.id);
-    const swapIndex = direction === "up" ? index - 1 : index + 1;
-
-    if (index < 0 || swapIndex < 0 || swapIndex >= sectionPhotos.length) return;
-
-    const firstPhoto = sectionPhotos[index];
-    const secondPhoto = sectionPhotos[swapIndex];
-    const firstOrder = firstPhoto.display_order ?? index;
-    const secondOrder = secondPhoto.display_order ?? swapIndex;
-
-    const [firstUpdate, secondUpdate] = await Promise.all([
-      supabase
-        .from("client_gallery_images")
-        .update({ display_order: secondOrder })
-        .eq("id", firstPhoto.id)
-        .select("*")
-        .single(),
-      supabase
-        .from("client_gallery_images")
-        .update({ display_order: firstOrder })
-        .eq("id", secondPhoto.id)
-        .select("*")
-        .single(),
-    ]);
-
-    if (firstUpdate.error || secondUpdate.error) {
-      setError(firstUpdate.error?.message || secondUpdate.error?.message || "Could not reorder photos.");
-      return;
-    }
-
-    setPhotos((current) =>
-      sortByOrder(
-        current.map((item) =>
-          item.id === firstUpdate.data.id
-            ? firstUpdate.data
-            : item.id === secondUpdate.data.id
-              ? secondUpdate.data
-              : item,
-        ),
-      ),
-    );
-  }
-
   function openPreview() {
     if (!gallery?.slug) return;
     window.open(`/gallery/${gallery.slug}`, "_blank", "noopener,noreferrer");
   }
 
-  function renderPhotosPanel() {
-    const selectedSection = sections.find((section) => section.id === targetSection) || sections[0];
+  function openPhoto(photo) {
+    const imageUrl = getGalleryPhotoUrl(photo?.display_path || photo?.original_path || photo?.thumbnail_path);
+    if (imageUrl) window.open(imageUrl, "_blank", "noopener,noreferrer");
+  }
 
+  async function copyFilenames(photosToCopy = selectedPhotos) {
+    const filenames = photosToCopy.map((photo) => photo.file_name || photo.title || photo.id).join("\n");
+    if (!filenames) return;
+
+    await navigator.clipboard?.writeText(filenames);
+    flash("Filenames copied.");
+    setContextMenu(null);
+  }
+
+  function showLaterNotice(feature) {
+    flash(`${feature} belongs to a later client gallery issue.`);
+    setContextMenu(null);
+  }
+
+  function renderPhotosPanel() {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
         <div>
@@ -1070,12 +1189,12 @@ export default function GalleryEditor() {
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            disabled={uploading || !selectedSection}
+            disabled={uploading || !activeSection}
             style={{
               ...primaryButtonStyle,
               width: "100%",
-              opacity: uploading || !selectedSection ? 0.55 : 1,
-              cursor: uploading || !selectedSection ? "not-allowed" : "pointer",
+              opacity: uploading || !activeSection ? 0.55 : 1,
+              cursor: uploading || !activeSection ? "not-allowed" : "pointer",
             }}
           >
             {uploading ? "Uploading..." : "+ Upload Photos"}
@@ -1089,7 +1208,7 @@ export default function GalleryEditor() {
               margin: "0.65rem 0 0",
             }}
           >
-            These photos belong only to this client gallery. They are not portfolio images.
+            Uploads go into the selected photo set and belong only to this client gallery.
           </p>
         </div>
 
@@ -1121,106 +1240,69 @@ export default function GalleryEditor() {
           </div>
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-          {sections.length === 0 && <EmptyState>Create a photo set before uploading images.</EmptyState>}
+        <div>
+          <FieldLabel>Photo Sets</FieldLabel>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {sections.length === 0 && <EmptyState>Create a photo set before uploading images.</EmptyState>}
+            {sortByOrder(sections).map((section) => {
+              const count = photos.filter((photo) => photo.section_id === section.id).length;
+              const active = activeSection?.id === section.id;
 
-          {sortByOrder(sections).map((section) => {
-            const sectionPhotos = sortByOrder(photos.filter((photo) => photo.section_id === section.id));
-
-            return (
-              <section key={section.id} style={{ border: `1px solid ${COLORS.border}`, padding: "0.85rem" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: "0.75rem" }}>
-                  <input
-                    value={section.title || ""}
-                    onChange={(event) =>
-                      setSections((current) =>
-                        current.map((item) =>
-                          item.id === section.id ? { ...item, title: event.target.value } : item,
-                        ),
-                      )
-                    }
-                    style={{ ...inputStyle, padding: "8px 9px" }}
-                  />
-                  <button type="button" onClick={() => saveSection(section)} style={buttonStyle}>
-                    Save
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => saveSection(section, { is_visible: section.is_visible === false })}
-                    style={buttonStyle}
-                  >
-                    {section.is_visible === false ? "Show" : "Hide"}
-                  </button>
-                </div>
-
-                {sectionPhotos.length === 0 && <EmptyState>No photos in this set yet.</EmptyState>}
-
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 }}>
-                  {sectionPhotos.map((photo) => {
-                    const isCover = gallery.cover_image_id === photo.id;
-
-                    return (
-                      <article
-                        key={photo.id}
-                        style={{
-                          border: `1px solid ${isCover ? COLORS.gold : COLORS.border}`,
-                          background: "rgba(255,255,255,0.025)",
-                          overflow: "hidden",
-                        }}
-                      >
-                        <div
-                          style={{
-                            aspectRatio: "4 / 3",
-                            background: getPhotoPreviewUrl(photo)
-                              ? `url(${getPhotoPreviewUrl(photo)}) center / cover`
-                              : "rgba(255,255,255,0.06)",
-                          }}
-                        />
-                        <div style={{ padding: 8 }}>
-                          <div
-                            style={{
-                              color: COLORS.white,
-                              fontFamily: "'Inter', sans-serif",
-                              fontSize: 11,
-                              fontWeight: 700,
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {photo.title || photo.file_name || "Gallery photo"}
-                          </div>
-                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 5, marginTop: 8 }}>
-                            <button type="button" onClick={() => movePhoto(photo, "up")} style={buttonStyle}>
-                              ↑
-                            </button>
-                            <button type="button" onClick={() => movePhoto(photo, "down")} style={buttonStyle}>
-                              ↓
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setCoverImage(photo.id)}
-                              style={{ ...buttonStyle, color: COLORS.gold }}
-                            >
-                              Cover
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => removePhoto(photo.id)}
-                              style={{ ...buttonStyle, color: "#ff8b8b" }}
-                            >
-                              Remove
-                            </button>
-                          </div>
-                        </div>
-                      </article>
-                    );
-                  })}
-                </div>
-              </section>
-            );
-          })}
+              return (
+                <button
+                  type="button"
+                  key={section.id}
+                  onClick={() => {
+                    setTargetSection(section.id);
+                    setSelectedPhotoIds([]);
+                    setContextMenu(null);
+                  }}
+                  style={{
+                    ...buttonStyle,
+                    background: active ? "rgba(255,255,255,0.075)" : "rgba(255,255,255,0.025)",
+                    borderColor: active ? COLORS.gold : COLORS.border,
+                    color: active ? COLORS.white : COLORS.muted,
+                    display: "flex",
+                    justifyContent: "space-between",
+                    textAlign: "left",
+                  }}
+                >
+                  <span>{section.title || "Untitled Set"}</span>
+                  <span>{count}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
+
+        {activeSection && (
+          <section style={{ border: `1px solid ${COLORS.border}`, padding: "0.85rem" }}>
+            <FieldLabel>Selected Set</FieldLabel>
+            <input
+              value={activeSection.title || ""}
+              onChange={(event) =>
+                setSections((current) =>
+                  current.map((item) =>
+                    item.id === activeSection.id ? { ...item, title: event.target.value } : item,
+                  ),
+                )
+              }
+              style={{ ...inputStyle, marginBottom: 8 }}
+            />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <button type="button" onClick={() => saveSection(activeSection)} style={buttonStyle}>
+                Save Set
+              </button>
+              <button
+                type="button"
+                onClick={() => saveSection(activeSection, { is_visible: activeSection.is_visible === false })}
+                style={buttonStyle}
+              >
+                {activeSection.is_visible === false ? "Show" : "Hide"}
+              </button>
+            </div>
+          </section>
+        )}
       </div>
     );
   }
@@ -1421,6 +1503,241 @@ export default function GalleryEditor() {
     return renderPhotosPanel();
   }
 
+  function renderPhotosWorkspace() {
+    if (!activeSection) {
+      return (
+        <main style={{ background: "#f4f4f4", minHeight: "calc(100vh - 124px)", padding: "3rem 2rem" }}>
+          <EmptyState>Create a photo set to start managing gallery photos.</EmptyState>
+        </main>
+      );
+    }
+
+    return (
+      <main
+        onClick={() => setContextMenu(null)}
+        style={{
+          background: "#f4f4f4",
+          color: "#111",
+          minHeight: "calc(100vh - 124px)",
+          overflowX: "auto",
+          padding: "2rem",
+          position: "relative",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "1rem", marginBottom: "1.5rem" }}>
+          <div>
+            <h2 style={{ fontFamily: "'Inter', sans-serif", fontSize: "1.7rem", margin: 0 }}>
+              {activeSection.title || "Untitled Set"}
+            </h2>
+            <p style={{ color: "#777", fontFamily: "'Inter', sans-serif", fontSize: 13, margin: "0.4rem 0 0" }}>
+              {activeSectionPhotos.length} photo{activeSectionPhotos.length === 1 ? "" : "s"} · Click to select · Drag to reorder · Right-click for actions
+            </p>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button type="button" onClick={() => setSelectedPhotoIds(activeSectionPhotos.map((photo) => photo.id))} style={{ ...buttonStyle, color: "#111", borderColor: "#ddd" }}>
+              Select All
+            </button>
+            <button type="button" onClick={() => setSelectedPhotoIds([])} style={{ ...buttonStyle, color: "#111", borderColor: "#ddd" }}>
+              Clear
+            </button>
+          </div>
+        </div>
+
+        {activeSectionPhotos.length === 0 && (
+          <div style={{ border: "1px dashed #ccc", color: "#777", fontFamily: "'Inter', sans-serif", padding: "4rem 2rem", textAlign: "center" }}>
+            No photos in this set yet. Use the Photos panel to upload images.
+          </div>
+        )}
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: "1.25rem" }}>
+          {activeSectionPhotos.map((photo) => {
+            const selected = selectedPhotoIds.includes(photo.id);
+            const isCover = gallery.cover_image_id === photo.id;
+
+            return (
+              <article
+                key={photo.id}
+                draggable
+                onDragStart={() => setDraggedPhotoId(photo.id)}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  reorderDraggedPhoto(photo.id);
+                }}
+                onClick={(event) => togglePhotoSelection(photo.id, event)}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  setContextMenu({ photoId: photo.id, x: event.clientX, y: event.clientY });
+                  if (!selectedPhotoIds.includes(photo.id)) setSelectedPhotoIds([photo.id]);
+                }}
+                style={{
+                  background: "#fff",
+                  border: `2px solid ${selected ? "#00b894" : isCover ? COLORS.gold : "transparent"}`,
+                  boxShadow: selected ? "0 0 0 3px rgba(0,184,148,0.16)" : "none",
+                  cursor: "grab",
+                  padding: "0.7rem",
+                  position: "relative",
+                  userSelect: "none",
+                }}
+              >
+                {isCover && (
+                  <span
+                    style={{
+                      position: "absolute",
+                      left: 10,
+                      top: 10,
+                      background: COLORS.gold,
+                      color: COLORS.bg,
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: 9,
+                      fontWeight: 900,
+                      letterSpacing: "0.1em",
+                      padding: "4px 6px",
+                      textTransform: "uppercase",
+                      zIndex: 2,
+                    }}
+                  >
+                    Cover
+                  </span>
+                )}
+                <div
+                  style={{
+                    aspectRatio: "4 / 3",
+                    background: getPhotoPreviewUrl(photo)
+                      ? `url(${getPhotoPreviewUrl(photo)}) center / contain no-repeat`
+                      : "#eee",
+                  }}
+                />
+                <div
+                  style={{
+                    color: "#555",
+                    fontFamily: "'Inter', sans-serif",
+                    fontSize: 11,
+                    marginTop: 8,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {photo.file_name || photo.title || photo.id}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+
+        {contextMenu && contextPhoto && (
+          <div
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              position: "fixed",
+              left: contextMenu.x,
+              top: contextMenu.y,
+              zIndex: 150,
+              minWidth: 220,
+              background: "#fff",
+              border: "1px solid #ddd",
+              boxShadow: "0 18px 55px rgba(0,0,0,0.18)",
+              padding: "0.5rem",
+            }}
+          >
+            {[
+              ["Open", () => openPhoto(contextPhoto)],
+              ["Set as cover", () => setCoverImage(contextPhoto.id)],
+              ["Copy filename", () => copyFilenames([contextPhoto])],
+              ["Move to top", () => moveSelectedToEdge("top")],
+              ["Move to bottom", () => moveSelectedToEdge("bottom")],
+              ["Watermark later", () => showLaterNotice("Watermark")],
+              ["Create mobile app later", () => showLaterNotice("Mobile app")],
+              ["Delete", () => removePhoto(contextPhoto.id)],
+            ].map(([label, action]) => (
+              <button
+                type="button"
+                key={label}
+                onClick={action}
+                style={{
+                  display: "block",
+                  width: "100%",
+                  background: "transparent",
+                  border: "none",
+                  color: label === "Delete" ? "#c0392b" : "#222",
+                  cursor: "pointer",
+                  fontFamily: "'Inter', sans-serif",
+                  fontSize: 13,
+                  padding: "0.7rem 0.85rem",
+                  textAlign: "left",
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {selectedPhotoIds.length > 0 && (
+          <div
+            style={{
+              position: "fixed",
+              left: "50%",
+              bottom: 24,
+              transform: "translateX(-50%)",
+              zIndex: 120,
+              background: "#171717",
+              color: "#fff",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.35)",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "0.8rem 1rem",
+            }}
+          >
+            <button type="button" onClick={() => setSelectedPhotoIds([])} style={{ ...buttonStyle, border: "none", padding: "6px 8px" }}>
+              ✕
+            </button>
+            <strong style={{ fontFamily: "'Inter', sans-serif", fontSize: 14 }}>
+              {selectedPhotoIds.length} selected
+            </strong>
+            <button type="button" onClick={() => showLaterNotice("Favorites")} style={buttonStyle}>
+              ☆ Favorite
+            </button>
+            <button type="button" onClick={() => showLaterNotice("Quick share")} style={buttonStyle}>
+              🔗 Share
+            </button>
+            <button type="button" onClick={() => selectedPhotoIds[0] && setCoverImage(selectedPhotoIds[0])} style={buttonStyle}>
+              Cover
+            </button>
+            <button type="button" onClick={() => moveSelectedToEdge("top")} style={buttonStyle}>
+              Top
+            </button>
+            <button type="button" onClick={() => moveSelectedToEdge("bottom")} style={buttonStyle}>
+              Bottom
+            </button>
+            <select
+              value={moveTargetSectionId}
+              onChange={(event) => setMoveTargetSectionId(event.target.value)}
+              style={{ ...inputStyle, width: 160, background: "#222", padding: "8px 9px" }}
+            >
+              {sections.map((section) => (
+                <option key={section.id} value={section.id}>
+                  {section.title}
+                </option>
+              ))}
+            </select>
+            <button type="button" onClick={() => moveSelectedToSection(moveTargetSectionId)} style={buttonStyle}>
+              Move
+            </button>
+            <button type="button" onClick={() => copyFilenames()} style={buttonStyle}>
+              Copy Names
+            </button>
+            <button type="button" onClick={deleteSelectedPhotos} style={{ ...buttonStyle, color: "#ff8b8b" }}>
+              Delete
+            </button>
+          </div>
+        )}
+      </main>
+    );
+  }
+
   if (loading) {
     return (
       <div style={pageStyle}>
@@ -1552,7 +1869,10 @@ export default function GalleryEditor() {
               <button
                 key={tab.id}
                 type="button"
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  setContextMenu(null);
+                }}
                 style={{
                   background: activeTab === tab.id ? "rgba(255,255,255,0.07)" : "transparent",
                   border: "none",
@@ -1609,22 +1929,26 @@ export default function GalleryEditor() {
           </div>
         </aside>
 
-        <main
-          style={{
-            background: "#f4f4f4",
-            minHeight: "calc(100vh - 124px)",
-            overflowX: "auto",
-            padding: "3rem 2rem",
-          }}
-        >
-          <GalleryPreview
-            gallery={gallery}
-            sections={sections}
-            photos={photos}
-            coverPhoto={coverPhoto}
-            previewMode={previewMode}
-          />
-        </main>
+        {activeTab === "photos" ? (
+          renderPhotosWorkspace()
+        ) : (
+          <main
+            style={{
+              background: "#f4f4f4",
+              minHeight: "calc(100vh - 124px)",
+              overflowX: "auto",
+              padding: "3rem 2rem",
+            }}
+          >
+            <GalleryPreview
+              gallery={gallery}
+              sections={sections}
+              photos={photos}
+              coverPhoto={coverPhoto}
+              previewMode={previewMode}
+            />
+          </main>
+        )}
       </div>
     </div>
   );
