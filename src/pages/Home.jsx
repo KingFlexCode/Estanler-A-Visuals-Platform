@@ -27,9 +27,9 @@ const testimonials = [
 ];
 
 const HERO_PHOTOS = [
-  `${BASE}/Portraits/EACP1856-Enhanced-NR.jpg`,
-  `${BASE}/Engadgements/Des%20Engadgement%20Pictures-114.jpg`,
-  `${BASE}/Portraits/EACP1809-Edit.jpg`,
+  `${BASE}/Portraits/originals/EACP1856-Enhanced-NR.jpeg`,
+  `${BASE}/Engadgements/originals/Des%20Engadgement%20Pictures-114.jpeg`,
+  `${BASE}/Portraits/originals/EACP1809-Edit.jpeg`,
 ];
 
 function buildPublicUrl(path) {
@@ -54,7 +54,7 @@ function mapPortfolioRow(image) {
 
 function Hero() {
   const [loaded, setLoaded] = useState(false);
-  const [bg, setBg] = useState(0);
+  const [backgroundIndex, setBackgroundIndex] = useState(0);
 
   useEffect(() => {
     const timer = setTimeout(() => setLoaded(true), 120);
@@ -64,7 +64,9 @@ function Hero() {
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setBg((previousIndex) => (previousIndex + 1) % HERO_PHOTOS.length);
+      setBackgroundIndex(
+        (previousIndex) => (previousIndex + 1) % HERO_PHOTOS.length,
+      );
     }, 5000);
 
     return () => clearInterval(timer);
@@ -91,7 +93,7 @@ function Hero() {
             backgroundImage: `url(${src})`,
             backgroundSize: "cover",
             backgroundPosition: "center 30%",
-            opacity: bg === index ? (loaded ? 0.6 : 0) : 0,
+            opacity: backgroundIndex === index ? (loaded ? 0.42 : 0) : 0,
             transition: "opacity 1.4s ease",
           }}
         />
@@ -102,7 +104,16 @@ function Hero() {
           position: "absolute",
           inset: 0,
           background:
-            "linear-gradient(to top, rgba(10,10,10,0.95) 0%, rgba(10,10,10,0.2) 60%, rgba(10,10,10,0.1) 100%)",
+            "linear-gradient(to top, rgba(27, 38, 50, 0.98) 0%, rgba(27, 38, 50, 0.72) 48%, rgba(27, 38, 50, 0.42) 100%)",
+        }}
+      />
+
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          background:
+            "radial-gradient(circle at 15% 85%, rgba(255, 177, 98, 0.22), transparent 28rem)",
         }}
       />
 
@@ -123,8 +134,8 @@ function Hero() {
         style={{
           position: "relative",
           zIndex: 2,
-          padding: "0 clamp(1.5rem, 6vw, 5rem) clamp(3rem, 8vh, 5rem)",
-          maxWidth: "760px",
+          padding: "0 var(--page-x) clamp(3rem, 8vh, 5rem)",
+          maxWidth: "780px",
         }}
       >
         <div
@@ -139,11 +150,11 @@ function Hero() {
 
         <h1
           style={{
-            fontFamily: "'Playfair Display', serif",
+            fontFamily: "var(--font-heading)",
             fontWeight: 700,
             fontSize: "clamp(2.8rem, 7vw, 5.5rem)",
             lineHeight: 1.05,
-            color: COLORS.white,
+            color: COLORS.text,
             margin: "1rem 0",
             opacity: loaded ? 1 : 0,
             transform: loaded ? "translateY(0)" : "translateY(30px)",
@@ -159,12 +170,12 @@ function Hero() {
 
         <p
           style={{
-            fontFamily: "'Inter', sans-serif",
+            fontFamily: "var(--font-body)",
             fontWeight: 300,
             fontSize: "clamp(0.95rem, 1.8vw, 1.1rem)",
             color: COLORS.muted,
             lineHeight: 1.75,
-            maxWidth: "480px",
+            maxWidth: "500px",
             margin: "0 0 2rem",
             opacity: loaded ? 1 : 0,
             transform: loaded ? "translateY(0)" : "translateY(20px)",
@@ -185,38 +196,11 @@ function Hero() {
             transition: "opacity 0.9s ease 0.65s",
           }}
         >
-          <Link
-            to="/work"
-            style={{
-              fontFamily: "'Inter', sans-serif",
-              fontSize: "11px",
-              letterSpacing: "0.14em",
-              textTransform: "uppercase",
-              fontWeight: 500,
-              color: COLORS.bg,
-              background: COLORS.gold,
-              padding: "14px 32px",
-              textDecoration: "none",
-            }}
-          >
+          <Link to="/work" className="btn-primary">
             View Work
           </Link>
 
-          <Link
-            to="/book"
-            style={{
-              fontFamily: "'Inter', sans-serif",
-              fontSize: "11px",
-              letterSpacing: "0.14em",
-              textTransform: "uppercase",
-              fontWeight: 500,
-              color: COLORS.gold,
-              background: "transparent",
-              border: `1px solid ${COLORS.border}`,
-              padding: "14px 32px",
-              textDecoration: "none",
-            }}
-          >
+          <Link to="/book" className="btn-secondary">
             Book a Session
           </Link>
         </div>
@@ -226,18 +210,18 @@ function Hero() {
         style={{
           position: "absolute",
           bottom: "2rem",
-          right: "clamp(1.5rem, 5vw, 4rem)",
+          right: "var(--page-x)",
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
           gap: "8px",
-          opacity: loaded ? 0.5 : 0,
+          opacity: loaded ? 0.62 : 0,
           transition: "opacity 1.2s ease 1.2s",
         }}
       >
         <div
           style={{
-            fontFamily: "'Inter', sans-serif",
+            fontFamily: "var(--font-body)",
             fontSize: "9px",
             letterSpacing: "0.2em",
             textTransform: "uppercase",
@@ -293,7 +277,7 @@ function FeaturedWork() {
     <section
       style={{
         background: COLORS.bg,
-        padding: "6rem clamp(1.5rem, 5vw, 4rem)",
+        padding: "6rem var(--page-x)",
       }}
     >
       <Reveal>
@@ -309,12 +293,13 @@ function FeaturedWork() {
         >
           <div>
             <Tag>Selected Work</Tag>
+
             <h2
               style={{
-                fontFamily: "'Playfair Display', serif",
+                fontFamily: "var(--font-heading)",
                 fontWeight: 700,
                 fontSize: "clamp(2rem, 4vw, 3rem)",
-                color: COLORS.white,
+                color: COLORS.text,
                 margin: "0.5rem 0 0",
               }}
             >
@@ -325,7 +310,7 @@ function FeaturedWork() {
           <Link
             to="/work"
             style={{
-              fontFamily: "'Inter', sans-serif",
+              fontFamily: "var(--font-body)",
               fontSize: "11px",
               letterSpacing: "0.12em",
               textTransform: "uppercase",
@@ -351,7 +336,8 @@ function FeaturedWork() {
                 breakInside: "avoid",
                 marginBottom: "10px",
                 aspectRatio: item.aspect,
-                background: "#111",
+                background: COLORS.surfaceDark,
+                border: `1px solid ${COLORS.borderDark}`,
                 position: "relative",
                 overflow: "hidden",
                 cursor: "pointer",
@@ -400,20 +386,20 @@ function FeaturedWork() {
                   position: "absolute",
                   inset: 0,
                   background:
-                    "linear-gradient(to top, rgba(10,10,10,0.9) 0%, transparent 60%)",
+                    "linear-gradient(to top, rgba(27, 38, 50, 0.94) 0%, transparent 62%)",
                   display: "flex",
                   alignItems: "flex-end",
                   padding: "1rem",
                   opacity: 0,
-                  transition: "opacity 0.3s ease",
+                  transition: "opacity var(--transition-base)",
                 }}
               >
                 <div>
                   <div
                     style={{
-                      fontFamily: "'Playfair Display', serif",
+                      fontFamily: "var(--font-heading)",
                       fontSize: "0.95rem",
-                      color: COLORS.white,
+                      color: COLORS.text,
                       marginBottom: "3px",
                     }}
                   >
@@ -444,19 +430,21 @@ function ServicesPreview() {
   return (
     <section
       style={{
-        background: COLORS.surface,
-        padding: "6rem clamp(1.5rem, 5vw, 4rem)",
-        borderTop: `1px solid ${COLORS.border}`,
+        background: COLORS.surfaceDark,
+        padding: "6rem var(--page-x)",
+        borderTop: `1px solid ${COLORS.borderDark}`,
+        borderBottom: `1px solid ${COLORS.borderDark}`,
       }}
     >
       <Reveal>
         <Tag>What I Do</Tag>
+
         <h2
           style={{
-            fontFamily: "'Playfair Display', serif",
+            fontFamily: "var(--font-heading)",
             fontWeight: 700,
             fontSize: "clamp(2rem, 4vw, 3rem)",
-            color: COLORS.white,
+            color: COLORS.text,
             margin: "0.5rem 0 3rem",
           }}
         >
@@ -469,14 +457,18 @@ function ServicesPreview() {
           display: "grid",
           gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
           gap: "1px",
-          background: COLORS.border,
+          background: COLORS.borderDark,
           marginBottom: "3rem",
         }}
       >
         {services.map((service, index) => (
           <Reveal key={service.label} delay={index * 0.05}>
             <div
-              style={{ background: COLORS.surface, padding: "1.75rem 1.5rem" }}
+              style={{
+                background: COLORS.surface,
+                padding: "1.75rem 1.5rem",
+                minHeight: "130px",
+              }}
             >
               <div style={{ fontSize: "1.4rem", marginBottom: "0.75rem" }}>
                 {service.icon}
@@ -484,10 +476,10 @@ function ServicesPreview() {
 
               <div
                 style={{
-                  fontFamily: "'Playfair Display', serif",
+                  fontFamily: "var(--font-heading)",
                   fontWeight: 600,
                   fontSize: "1rem",
-                  color: COLORS.white,
+                  color: COLORS.text,
                 }}
               >
                 {service.label}
@@ -498,21 +490,7 @@ function ServicesPreview() {
       </div>
 
       <div style={{ textAlign: "center" }}>
-        <Link
-          to="/services"
-          style={{
-            fontFamily: "'Inter', sans-serif",
-            fontSize: "11px",
-            letterSpacing: "0.14em",
-            textTransform: "uppercase",
-            fontWeight: 500,
-            color: COLORS.gold,
-            background: "transparent",
-            border: `1px solid ${COLORS.border}`,
-            padding: "14px 40px",
-            textDecoration: "none",
-          }}
-        >
+        <Link to="/services" className="btn-secondary">
           View All Services
         </Link>
       </div>
@@ -525,8 +503,8 @@ function BookCTA() {
     <section
       style={{
         background: COLORS.bg,
-        padding: "7rem clamp(1.5rem, 5vw, 4rem)",
-        borderTop: `1px solid ${COLORS.border}`,
+        padding: "7rem var(--page-x)",
+        borderTop: `1px solid ${COLORS.borderDark}`,
         textAlign: "center",
       }}
     >
@@ -535,12 +513,12 @@ function BookCTA() {
 
         <h2
           style={{
-            fontFamily: "'Playfair Display', serif",
+            fontFamily: "var(--font-heading)",
             fontWeight: 700,
             fontSize: "clamp(2rem, 4vw, 3.5rem)",
-            color: COLORS.white,
+            color: COLORS.text,
             margin: "1rem auto",
-            maxWidth: "600px",
+            maxWidth: "620px",
             lineHeight: 1.15,
           }}
         >
@@ -553,11 +531,11 @@ function BookCTA() {
 
         <p
           style={{
-            fontFamily: "'Inter', sans-serif",
+            fontFamily: "var(--font-body)",
             fontWeight: 300,
             fontSize: "1rem",
             color: COLORS.muted,
-            maxWidth: "440px",
+            maxWidth: "460px",
             margin: "0 auto 2.5rem",
             lineHeight: 1.75,
           }}
@@ -566,21 +544,7 @@ function BookCTA() {
           vision and I'll bring it to life.
         </p>
 
-        <Link
-          to="/book"
-          style={{
-            fontFamily: "'Inter', sans-serif",
-            fontSize: "11px",
-            letterSpacing: "0.14em",
-            textTransform: "uppercase",
-            fontWeight: 500,
-            color: COLORS.bg,
-            background: COLORS.gold,
-            padding: "16px 48px",
-            textDecoration: "none",
-            display: "inline-block",
-          }}
-        >
+        <Link to="/book" className="btn-primary">
           Request a Quote
         </Link>
       </Reveal>
@@ -602,9 +566,9 @@ function Testimonials() {
   return (
     <section
       style={{
-        background: COLORS.surface,
-        padding: "6rem clamp(1.5rem, 5vw, 4rem)",
-        borderTop: `1px solid ${COLORS.border}`,
+        background: COLORS.surfaceDark,
+        padding: "6rem var(--page-x)",
+        borderTop: `1px solid ${COLORS.borderDark}`,
         textAlign: "center",
       }}
     >
@@ -613,19 +577,19 @@ function Testimonials() {
 
         <h2
           style={{
-            fontFamily: "'Playfair Display', serif",
+            fontFamily: "var(--font-heading)",
             fontWeight: 700,
             fontSize: "clamp(1.8rem, 3vw, 2.5rem)",
-            color: COLORS.white,
+            color: COLORS.text,
             margin: "0.75rem auto 3rem",
-            maxWidth: "500px",
+            maxWidth: "520px",
           }}
         >
           What Clients Say
         </h2>
       </Reveal>
 
-      <div style={{ maxWidth: "620px", margin: "0 auto", minHeight: "180px" }}>
+      <div style={{ maxWidth: "640px", margin: "0 auto", minHeight: "180px" }}>
         {testimonials.map((testimonial, index) => (
           <div
             key={testimonial.name}
@@ -633,10 +597,10 @@ function Testimonials() {
           >
             <div
               style={{
-                fontFamily: "'Playfair Display', serif",
+                fontFamily: "var(--font-heading)",
                 fontStyle: "italic",
                 fontSize: "clamp(1rem, 2vw, 1.2rem)",
-                color: COLORS.white,
+                color: COLORS.text,
                 lineHeight: 1.8,
                 marginBottom: "1.5rem",
               }}
@@ -646,8 +610,8 @@ function Testimonials() {
 
             <div
               style={{
-                fontFamily: "'Inter', sans-serif",
-                fontWeight: 500,
+                fontFamily: "var(--font-body)",
+                fontWeight: 600,
                 fontSize: "0.9rem",
                 color: COLORS.gold,
                 marginBottom: "3px",
@@ -680,7 +644,7 @@ function Testimonials() {
               background: index === active ? COLORS.gold : COLORS.border,
               border: "none",
               cursor: "pointer",
-              transition: "all 0.3s ease",
+              transition: "all var(--transition-base)",
               padding: 0,
             }}
           />

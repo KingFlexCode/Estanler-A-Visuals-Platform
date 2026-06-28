@@ -1,0 +1,204 @@
+:root {
+  /* Brand palette */
+  --color-palladian: #eee9df;
+  --color-oatmeal: #c9c1b1;
+  --color-blue-fantastic: #2c3b4d;
+  --color-burning-flame: #ffb162;
+  --color-truffle-trouble: #a35139;
+  --color-abyssal-blue: #1b2632;
+
+  /* Semantic theme */
+  --color-bg: var(--color-abyssal-blue);
+  --color-bg-dark: #111a24;
+  --color-bg-light: var(--color-palladian);
+
+  --color-surface: var(--color-blue-fantastic);
+  --color-surface-dark: #17212c;
+  --color-surface-soft: rgba(44, 59, 77, 0.72);
+  --color-surface-light: #e6dfd2;
+
+  --color-text: var(--color-palladian);
+  --color-text-dark: var(--color-abyssal-blue);
+  --color-text-light: var(--color-palladian);
+
+  --color-muted: rgba(238, 233, 223, 0.72);
+  --color-muted-dark: rgba(238, 233, 223, 0.56);
+  --color-muted-light: rgba(27, 38, 50, 0.62);
+
+  --color-border: rgba(201, 193, 177, 0.28);
+  --color-border-dark: rgba(201, 193, 177, 0.18);
+  --color-border-light: rgba(27, 38, 50, 0.14);
+
+  --color-gold: var(--color-burning-flame);
+  --color-gold-deep: var(--color-truffle-trouble);
+  --color-gold-soft: rgba(255, 177, 98, 0.16);
+
+  --color-danger: var(--color-truffle-trouble);
+
+  /* Fonts */
+  --font-heading: "Playfair Display", serif;
+  --font-body: "Inter", sans-serif;
+
+  /* Layout */
+  --nav-height: 64px;
+  --page-x: clamp(1.5rem, 5vw, 4rem);
+
+  /* Motion */
+  --transition-fast: 0.25s ease;
+  --transition-base: 0.3s ease;
+  --transition-slow: 0.6s ease;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--color-bg);
+  color: var(--color-text);
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background:
+    radial-gradient(
+      circle at top left,
+      rgba(255, 177, 98, 0.08),
+      transparent 32rem
+    ),
+    linear-gradient(135deg, var(--color-abyssal-blue), #111a24);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  border-radius: 0;
+}
+
+a {
+  color: inherit;
+}
+
+img {
+  max-width: 100%;
+}
+
+::selection {
+  background: var(--color-burning-flame);
+  color: var(--color-abyssal-blue);
+}
+
+.page {
+  min-height: 100vh;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.page-light {
+  min-height: 100vh;
+  background: var(--color-bg-light);
+  color: var(--color-text-dark);
+}
+
+.section {
+  padding: 6rem var(--page-x);
+}
+
+.eyebrow {
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-burning-flame);
+}
+
+.heading {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.heading-light {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  color: var(--color-text-dark);
+}
+
+.muted {
+  color: var(--color-muted);
+}
+
+.muted-light {
+  color: var(--color-muted-light);
+}
+
+.card {
+  background: var(--color-surface-soft);
+  border: 1px solid var(--color-border);
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-burning-flame);
+  color: var(--color-abyssal-blue);
+  border: none;
+  text-decoration: none;
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 14px 32px;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.btn-primary:hover {
+  background: var(--color-truffle-trouble);
+  color: var(--color-palladian);
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--color-burning-flame);
+  border: 1px solid var(--color-border);
+  text-decoration: none;
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 14px 32px;
+  transition:
+    color var(--transition-fast),
+    border-color var(--transition-fast),
+    background var(--transition-fast);
+}
+
+.btn-secondary:hover {
+  color: var(--color-palladian);
+  border-color: var(--color-burning-flame);
+  background: rgba(255, 177, 98, 0.08);
+}

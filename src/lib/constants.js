@@ -1,17 +1,38 @@
 export const COLORS = {
-  // Light warm theme for Work/Portfolio pages
-  bg: "#FAF8F5",
-  bgDark: "#0A0A0A",
-  white: "#FFFFFF",
-  gold: "#C8A96B",
-  goldDeep: "#D4AF37",
-  muted: "rgba(30,20,10,0.45)",
-  mutedDark: "rgba(255,255,255,0.45)",
-  border: "rgba(200,169,107,0.25)",
-  borderDark: "rgba(200,169,107,0.18)",
-  surface: "#F3EFE8",
-  surfaceDark: "#060606",
-  text: "#1A1208",
+  bg: "var(--color-bg)",
+  bgDark: "var(--color-bg-dark)",
+  bgLight: "var(--color-bg-light)",
+
+  surface: "var(--color-surface)",
+  surfaceDark: "var(--color-surface-dark)",
+  surfaceLight: "var(--color-surface-light)",
+  surfaceSoft: "var(--color-surface-soft)",
+
+  white: "var(--color-text)",
+  text: "var(--color-text)",
+  textLight: "var(--color-text-light)",
+  textDark: "var(--color-text-dark)",
+
+  gold: "var(--color-burning-flame)",
+  goldDeep: "var(--color-truffle-trouble)",
+  goldSoft: "var(--color-gold-soft)",
+
+  muted: "var(--color-muted)",
+  mutedDark: "var(--color-muted-dark)",
+  mutedLight: "var(--color-muted-light)",
+
+  border: "var(--color-border)",
+  borderDark: "var(--color-border-dark)",
+  borderLight: "var(--color-border-light)",
+
+  danger: "var(--color-danger)",
+
+  palladian: "var(--color-palladian)",
+  oatmeal: "var(--color-oatmeal)",
+  blueFantastic: "var(--color-blue-fantastic)",
+  burningFlame: "var(--color-burning-flame)",
+  truffleTrouble: "var(--color-truffle-trouble)",
+  abyssalBlue: "var(--color-abyssal-blue)",
 };
 
 export const BASE =

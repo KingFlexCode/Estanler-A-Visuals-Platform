@@ -2,16 +2,11 @@ import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { COLORS } from "../lib/constants";
 
-const LIGHT_PAGES = ["/work", "/services", "/about", "/book", "/shop"];
-
 export default function Nav() {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
 
-  const isLight = LIGHT_PAGES.some((page) =>
-    location.pathname.startsWith(page),
-  );
   const isHome = location.pathname === "/";
 
   useEffect(() => {
@@ -30,25 +25,18 @@ export default function Nav() {
   ];
 
   const isActive = (to) => location.pathname === to;
-
   const closeMenu = () => setMenuOpen(false);
 
-  const navBg = isLight
-    ? scrolled
-      ? "rgba(250,248,245,0.96)"
-      : "rgba(250,248,245,0.98)"
-    : scrolled || !isHome
-      ? "rgba(10,10,10,0.95)"
-      : "transparent";
+  const navBg =
+    isHome && !scrolled ? "rgba(27, 38, 50, 0.72)" : "rgba(27, 38, 50, 0.96)";
 
-  const navBorder = isLight
-    ? `1px solid ${COLORS.border}`
-    : scrolled || !isHome
-      ? `1px solid ${COLORS.borderDark}`
-      : "1px solid transparent";
+  const navBorder =
+    isHome && !scrolled
+      ? "1px solid rgba(201, 193, 177, 0.12)"
+      : `1px solid ${COLORS.border}`;
 
-  const textColor = isLight ? COLORS.text : COLORS.white;
-  const mutedColor = isLight ? COLORS.muted : COLORS.mutedDark;
+  const textColor = COLORS.text;
+  const mutedColor = COLORS.muted;
 
   return (
     <>
@@ -59,27 +47,32 @@ export default function Nav() {
           left: 0,
           right: 0,
           zIndex: 100,
+          height: "var(--nav-height)",
           background: navBg,
           borderBottom: navBorder,
-          backdropFilter: "blur(12px)",
-          transition: "all 0.3s ease",
-          padding: "0 clamp(1.5rem, 5vw, 4rem)",
+          backdropFilter: "blur(14px)",
+          transition: "all var(--transition-base)",
+          padding: "0 var(--page-x)",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          height: "64px",
         }}
       >
-        <Link to="/" onClick={closeMenu} style={{ textDecoration: "none" }}>
+        <Link
+          to="/"
+          onClick={closeMenu}
+          aria-label="Go to homepage"
+          style={{ textDecoration: "none" }}
+        >
           <div
             style={{
-              fontFamily: "'Playfair Display', serif",
+              fontFamily: "var(--font-heading)",
               fontWeight: 700,
               fontSize: "16px",
               color: textColor,
               letterSpacing: "0.04em",
               lineHeight: 1.1,
-              transition: "color 0.3s",
+              transition: "color var(--transition-fast)",
             }}
           >
             Estanler A
@@ -87,8 +80,8 @@ export default function Nav() {
 
           <div
             style={{
-              fontFamily: "'Inter', sans-serif",
-              fontWeight: 300,
+              fontFamily: "var(--font-body)",
+              fontWeight: 500,
               fontSize: "9px",
               letterSpacing: "0.22em",
               color: COLORS.gold,
@@ -99,24 +92,27 @@ export default function Nav() {
           </div>
         </Link>
 
-        <div style={{ display: "flex", gap: "2rem", alignItems: "center" }}>
+        <div
+          className="desktop-nav"
+          style={{ display: "flex", gap: "2rem", alignItems: "center" }}
+        >
           {links.map((link) => (
             <Link
               key={link.to}
               to={link.to}
               onClick={closeMenu}
               style={{
-                fontFamily: "'Inter', sans-serif",
-                fontWeight: 400,
+                fontFamily: "var(--font-body)",
+                fontWeight: 500,
                 fontSize: "12px",
                 letterSpacing: "0.1em",
                 textTransform: "uppercase",
                 textDecoration: "none",
                 color: isActive(link.to) ? COLORS.gold : mutedColor,
-                transition: "color 0.25s",
+                transition: "color var(--transition-fast)",
               }}
               onMouseEnter={(event) => {
-                event.target.style.color = isLight ? COLORS.text : COLORS.white;
+                event.target.style.color = COLORS.text;
               }}
               onMouseLeave={(event) => {
                 event.target.style.color = isActive(link.to)
@@ -132,17 +128,17 @@ export default function Nav() {
             to="/admin/login"
             onClick={closeMenu}
             style={{
-              fontFamily: "'Inter', sans-serif",
-              fontWeight: 400,
+              fontFamily: "var(--font-body)",
+              fontWeight: 500,
               fontSize: "12px",
               letterSpacing: "0.1em",
               textTransform: "uppercase",
               textDecoration: "none",
               color: mutedColor,
-              transition: "color 0.25s",
+              transition: "color var(--transition-fast)",
             }}
             onMouseEnter={(event) => {
-              event.target.style.color = isLight ? COLORS.text : COLORS.white;
+              event.target.style.color = COLORS.text;
             }}
             onMouseLeave={(event) => {
               event.target.style.color = mutedColor;
@@ -154,23 +150,9 @@ export default function Nav() {
           <Link
             to="/book"
             onClick={closeMenu}
+            className="btn-primary"
             style={{
-              fontFamily: "'Inter', sans-serif",
-              fontSize: "11px",
-              letterSpacing: "0.12em",
-              textTransform: "uppercase",
-              fontWeight: 500,
-              color: COLORS.bgDark,
-              background: COLORS.gold,
               padding: "9px 20px",
-              textDecoration: "none",
-              transition: "background 0.25s",
-            }}
-            onMouseEnter={(event) => {
-              event.target.style.background = COLORS.goldDeep;
-            }}
-            onMouseLeave={(event) => {
-              event.target.style.background = COLORS.gold;
             }}
           >
             Book
@@ -185,7 +167,7 @@ export default function Nav() {
           aria-expanded={menuOpen}
           style={{
             display: "none",
-            background: "none",
+            background: "transparent",
             border: "none",
             cursor: "pointer",
             flexDirection: "column",
@@ -200,7 +182,7 @@ export default function Nav() {
                 width: "22px",
                 height: "1.5px",
                 background: textColor,
-                transition: "all 0.3s ease",
+                transition: "all var(--transition-base)",
                 opacity: menuOpen && index === 1 ? 0 : 1,
                 transform: menuOpen
                   ? index === 0
@@ -221,15 +203,14 @@ export default function Nav() {
             position: "fixed",
             inset: 0,
             zIndex: 99,
-            background: isLight
-              ? "rgba(250,248,245,0.99)"
-              : "rgba(10,10,10,0.99)",
+            background:
+              "linear-gradient(135deg, rgba(27, 38, 50, 0.99), rgba(17, 26, 36, 0.99))",
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
             justifyContent: "center",
-            gap: "2.5rem",
-            paddingTop: "64px",
+            gap: "2.4rem",
+            paddingTop: "var(--nav-height)",
           }}
         >
           {[...links, { label: "Book", to: "/book" }].map((link) => (
@@ -238,13 +219,9 @@ export default function Nav() {
               to={link.to}
               onClick={closeMenu}
               style={{
-                fontFamily: "'Playfair Display', serif",
+                fontFamily: "var(--font-heading)",
                 fontSize: "2rem",
-                color: isActive(link.to)
-                  ? COLORS.gold
-                  : isLight
-                    ? COLORS.text
-                    : COLORS.white,
+                color: isActive(link.to) ? COLORS.gold : COLORS.text,
                 textDecoration: "none",
                 letterSpacing: "0.05em",
               }}
@@ -252,12 +229,35 @@ export default function Nav() {
               {link.label}
             </Link>
           ))}
+
+          <Link
+            to="/admin/login"
+            onClick={closeMenu}
+            style={{
+              fontFamily: "var(--font-body)",
+              fontSize: "11px",
+              fontWeight: 600,
+              letterSpacing: "0.16em",
+              textTransform: "uppercase",
+              color: COLORS.muted,
+              textDecoration: "none",
+              marginTop: "0.5rem",
+            }}
+          >
+            Owner Login
+          </Link>
         </div>
       )}
 
       <style>{`
-        @media (max-width: 680px) {
-          .hamburger { display: flex !important; }
+        @media (max-width: 760px) {
+          .desktop-nav {
+            display: none !important;
+          }
+
+          .hamburger {
+            display: flex !important;
+          }
         }
       `}</style>
     </>
