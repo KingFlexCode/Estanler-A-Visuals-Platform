@@ -44,7 +44,7 @@ export function Stars({ count }) {
   );
 }
 
-export function useReveal() {
+function useReveal() {
   const ref = useRef(null);
   const [visible, setVisible] = useState(false);
   useEffect(() => {

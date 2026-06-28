@@ -1,15 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "../../lib/supabase";
-import {
-  COLORS,
-  BASE,
-  FOLDER_CATEGORY_MAP,
-  ASPECT_MAP,
-  CATEGORY_LABELS,
-} from "../../lib/constants";
-import { AdminNav } from "./Dashboard";
 import { Spinner } from "../../components/UI";
+import {
+  ASPECT_MAP,
+  BASE,
+  CATEGORY_LABELS,
+  COLORS,
+  FOLDER_CATEGORY_MAP,
+} from "../../lib/constants";
+import { supabase } from "../../lib/supabase";
+import { AdminNav } from "./Dashboard";
 
 function buildPublicUrl(path) {
   if (!path) return "";
@@ -45,6 +45,7 @@ function Input({ label, value, onChange, type = "text", min, max, step }) {
       >
         {label}
       </span>
+
       <input
         type={type}
         min={min}
@@ -90,6 +91,7 @@ function Select({ label, value, onChange, children }) {
       >
         {label}
       </span>
+
       <select
         value={value ?? ""}
         onChange={(e) => onChange(e.target.value)}
@@ -117,7 +119,9 @@ function Toggle({ label, checked, onChange }) {
       type="button"
       onClick={() => onChange(!checked)}
       style={{
-        border: `1px solid ${checked ? COLORS.gold : COLORS.borderDark || COLORS.border}`,
+        border: `1px solid ${
+          checked ? COLORS.gold : COLORS.borderDark || COLORS.border
+        }`,
         background: checked ? COLORS.gold : "transparent",
         color: checked ? COLORS.bgDark || "#0A0A0A" : COLORS.mutedDark,
         padding: "10px 12px",
@@ -178,6 +182,7 @@ function PortfolioCard({ image, onChange, onSave, saving }) {
             }}
           />
         </div>
+
         <div
           style={{
             fontFamily: "'Inter', sans-serif",
@@ -204,6 +209,7 @@ function PortfolioCard({ image, onChange, onSave, saving }) {
             value={image.title || ""}
             onChange={(v) => set("title", v)}
           />
+
           <Select
             label="Category"
             value={image.category}
@@ -240,12 +246,14 @@ function PortfolioCard({ image, onChange, onSave, saving }) {
             <option value="4 / 5">Portrait 4:5</option>
             <option value="16 / 9">Wide 16:9</option>
           </Select>
+
           <Input
             label="Display Order"
             type="number"
             value={image.display_order || 0}
             onChange={(v) => set("display_order", v)}
           />
+
           <Input
             label="Zoom"
             type="number"
@@ -272,6 +280,7 @@ function PortfolioCard({ image, onChange, onSave, saving }) {
             value={x}
             onChange={(v) => set("object_position_x", v)}
           />
+
           <Input
             label={`Position Y: ${y}%`}
             type="range"
@@ -295,12 +304,15 @@ function PortfolioCard({ image, onChange, onSave, saving }) {
             checked={!!image.is_visible}
             onChange={(v) => set("is_visible", v)}
           />
+
           <Toggle
             label="Featured"
             checked={!!image.featured}
             onChange={(v) => set("featured", v)}
           />
+
           <button
+            type="button"
             onClick={() => onSave(image)}
             disabled={saving}
             style={{
@@ -340,13 +352,7 @@ export default function PortfolioAdmin() {
       : images.filter((img) => img.category === filter);
   }, [images, filter]);
 
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    navigate("/admin/login");
-  };
-
-  async function fetchImages() {
-    setLoading(true);
+  const fetchImages = useCallback(async () => {
     const { data, error } = await supabase
       .from("portfolio_images")
       .select("*")
@@ -360,12 +366,18 @@ export default function PortfolioAdmin() {
     } else {
       setImages(data || []);
     }
+
     setLoading(false);
-  }
+  }, []);
 
   useEffect(() => {
     fetchImages();
-  }, []);
+  }, [fetchImages]);
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    navigate("/admin/login");
+  };
 
   async function syncFromStorage() {
     setSyncing(true);
@@ -389,7 +401,9 @@ export default function PortfolioAdmin() {
 
       for (const file of data) {
         if (!file.name?.match(/\.(jpg|jpeg|png|webp|gif)$/i)) continue;
+
         const originalPath = `${folder}/${file.name}`;
+
         if (existingPaths.has(originalPath)) continue;
 
         inserts.push({
@@ -412,17 +426,22 @@ export default function PortfolioAdmin() {
 
     if (inserts.length > 0) {
       const { error } = await supabase.from("portfolio_images").insert(inserts);
-      if (error) setStatus(`Sync error: ${error.message}`);
-      else
+
+      if (error) {
+        setStatus(`Sync error: ${error.message}`);
+      } else {
         setStatus(
-          `Synced ${inserts.length} new portfolio image${inserts.length === 1 ? "" : "s"}.`,
+          `Synced ${inserts.length} new portfolio image${
+            inserts.length === 1 ? "" : "s"
+          }.`,
         );
+      }
     } else {
       setStatus("No new images found. Portfolio table is already synced.");
     }
 
     setSyncing(false);
-    fetchImages();
+    await fetchImages();
   }
 
   function updateLocalImage(next) {
@@ -431,6 +450,7 @@ export default function PortfolioAdmin() {
 
   async function saveImage(image) {
     setSavingId(image.id);
+
     const payload = {
       category: image.category,
       title: image.title,
@@ -448,14 +468,20 @@ export default function PortfolioAdmin() {
       .from("portfolio_images")
       .update(payload)
       .eq("id", image.id);
+
     setSavingId(null);
-    if (error) setStatus(`Save error: ${error.message}`);
-    else setStatus(`Saved ${image.title || image.file_name}.`);
+
+    if (error) {
+      setStatus(`Save error: ${error.message}`);
+    } else {
+      setStatus(`Saved ${image.title || image.file_name}.`);
+    }
   }
 
   return (
     <div style={{ minHeight: "100vh", background: COLORS.bgDark || "#0A0A0A" }}>
       <AdminNav onSignOut={handleSignOut} />
+
       <div style={{ padding: "2.5rem 2rem" }}>
         <div
           style={{
@@ -479,6 +505,7 @@ export default function PortfolioAdmin() {
             >
               Portfolio Manager
             </h1>
+
             <p
               style={{
                 fontFamily: "'Inter', sans-serif",
@@ -494,6 +521,7 @@ export default function PortfolioAdmin() {
           </div>
 
           <button
+            type="button"
             onClick={syncFromStorage}
             disabled={syncing}
             style={{
@@ -539,9 +567,14 @@ export default function PortfolioAdmin() {
           {["all", ...Object.keys(CATEGORY_LABELS)].map((key) => (
             <button
               key={key}
+              type="button"
               onClick={() => setFilter(key)}
               style={{
-                border: `1px solid ${filter === key ? COLORS.gold : COLORS.borderDark || COLORS.border}`,
+                border: `1px solid ${
+                  filter === key
+                    ? COLORS.gold
+                    : COLORS.borderDark || COLORS.border
+                }`,
                 background: filter === key ? COLORS.gold : "transparent",
                 color:
                   filter === key

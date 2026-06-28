@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { COLORS } from "../lib/constants";
 
@@ -9,16 +9,18 @@ export default function Nav() {
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
 
-  const isLight = LIGHT_PAGES.some((p) => location.pathname.startsWith(p));
+  const isLight = LIGHT_PAGES.some((page) =>
+    location.pathname.startsWith(page),
+  );
   const isHome = location.pathname === "/";
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 60);
+
     window.addEventListener("scroll", handleScroll, { passive: true });
+
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
-
-  useEffect(() => setMenuOpen(false), [location]);
 
   const links = [
     { label: "Gallery", to: "/work" },
@@ -29,7 +31,8 @@ export default function Nav() {
 
   const isActive = (to) => location.pathname === to;
 
-  // Color logic
+  const closeMenu = () => setMenuOpen(false);
+
   const navBg = isLight
     ? scrolled
       ? "rgba(250,248,245,0.96)"
@@ -67,8 +70,7 @@ export default function Nav() {
           height: "64px",
         }}
       >
-        {/* Wordmark */}
-        <Link to="/" style={{ textDecoration: "none" }}>
+        <Link to="/" onClick={closeMenu} style={{ textDecoration: "none" }}>
           <div
             style={{
               fontFamily: "'Playfair Display', serif",
@@ -82,6 +84,7 @@ export default function Nav() {
           >
             Estanler A
           </div>
+
           <div
             style={{
               fontFamily: "'Inter', sans-serif",
@@ -96,12 +99,12 @@ export default function Nav() {
           </div>
         </Link>
 
-        {/* Desktop links */}
         <div style={{ display: "flex", gap: "2rem", alignItems: "center" }}>
           {links.map((link) => (
             <Link
               key={link.to}
               to={link.to}
+              onClick={closeMenu}
               style={{
                 fontFamily: "'Inter', sans-serif",
                 fontWeight: 400,
@@ -112,23 +115,45 @@ export default function Nav() {
                 color: isActive(link.to) ? COLORS.gold : mutedColor,
                 transition: "color 0.25s",
               }}
-              onMouseEnter={(e) =>
-                (e.target.style.color = isLight ? COLORS.text : COLORS.white)
-              }
-              onMouseLeave={(e) =>
-                (e.target.style.color = isActive(link.to)
+              onMouseEnter={(event) => {
+                event.target.style.color = isLight ? COLORS.text : COLORS.white;
+              }}
+              onMouseLeave={(event) => {
+                event.target.style.color = isActive(link.to)
                   ? COLORS.gold
-                  : mutedColor)
-              }
+                  : mutedColor;
+              }}
             >
               {link.label}
             </Link>
           ))}
 
-          <Link to="/admin/login">Owner Login</Link>
+          <Link
+            to="/admin/login"
+            onClick={closeMenu}
+            style={{
+              fontFamily: "'Inter', sans-serif",
+              fontWeight: 400,
+              fontSize: "12px",
+              letterSpacing: "0.1em",
+              textTransform: "uppercase",
+              textDecoration: "none",
+              color: mutedColor,
+              transition: "color 0.25s",
+            }}
+            onMouseEnter={(event) => {
+              event.target.style.color = isLight ? COLORS.text : COLORS.white;
+            }}
+            onMouseLeave={(event) => {
+              event.target.style.color = mutedColor;
+            }}
+          >
+            Owner Login
+          </Link>
 
           <Link
             to="/book"
+            onClick={closeMenu}
             style={{
               fontFamily: "'Inter', sans-serif",
               fontSize: "11px",
@@ -141,17 +166,23 @@ export default function Nav() {
               textDecoration: "none",
               transition: "background 0.25s",
             }}
-            onMouseEnter={(e) => (e.target.style.background = COLORS.goldDeep)}
-            onMouseLeave={(e) => (e.target.style.background = COLORS.gold)}
+            onMouseEnter={(event) => {
+              event.target.style.background = COLORS.goldDeep;
+            }}
+            onMouseLeave={(event) => {
+              event.target.style.background = COLORS.gold;
+            }}
           >
             Book
           </Link>
         </div>
 
-        {/* Mobile hamburger */}
         <button
-          onClick={() => setMenuOpen((p) => !p)}
+          type="button"
+          onClick={() => setMenuOpen((previousValue) => !previousValue)}
           className="hamburger"
+          aria-label={menuOpen ? "Close menu" : "Open menu"}
+          aria-expanded={menuOpen}
           style={{
             display: "none",
             background: "none",
@@ -162,19 +193,19 @@ export default function Nav() {
             padding: "4px",
           }}
         >
-          {[0, 1, 2].map((i) => (
+          {[0, 1, 2].map((index) => (
             <div
-              key={i}
+              key={index}
               style={{
                 width: "22px",
                 height: "1.5px",
                 background: textColor,
                 transition: "all 0.3s ease",
-                opacity: menuOpen && i === 1 ? 0 : 1,
+                opacity: menuOpen && index === 1 ? 0 : 1,
                 transform: menuOpen
-                  ? i === 0
+                  ? index === 0
                     ? "rotate(45deg) translate(4.5px, 4.5px)"
-                    : i === 2
+                    : index === 2
                       ? "rotate(-45deg) translate(4.5px, -4.5px)"
                       : "none"
                   : "none",
@@ -184,7 +215,6 @@ export default function Nav() {
         </button>
       </nav>
 
-      {/* Mobile menu */}
       {menuOpen && (
         <div
           style={{
@@ -206,6 +236,7 @@ export default function Nav() {
             <Link
               key={link.to}
               to={link.to}
+              onClick={closeMenu}
               style={{
                 fontFamily: "'Playfair Display', serif",
                 fontSize: "2rem",

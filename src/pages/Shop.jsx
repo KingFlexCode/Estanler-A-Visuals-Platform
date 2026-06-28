@@ -1,4 +1,3 @@
-import { Link } from "react-router-dom";
 import { COLORS } from "../lib/constants";
 import { Tag, GoldLine, Reveal } from "../components/UI";
 import Footer from "../components/Footer";

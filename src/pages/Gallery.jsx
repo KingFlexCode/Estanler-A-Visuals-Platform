@@ -1,8 +1,8 @@
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { supabase } from "../lib/supabase";
-import { COLORS } from "../lib/constants";
 import { Spinner } from "../components/UI";
+import { COLORS } from "../lib/constants";
+import { supabase } from "../lib/supabase";
 
 const BASE_GALLERY =
   "https://kkimcezmyiqtfjdczeii.supabase.co/storage/v1/object/public/client-galleries";
@@ -20,21 +20,38 @@ export default function Gallery() {
   const [favorites, setFavorites] = useState(new Set());
   const [downloadCount, setDownloadCount] = useState(0);
 
+  const loadPhotos = useCallback(async (galleryId) => {
+    const { data } = await supabase
+      .from("gallery_photos")
+      .select("*")
+      .eq("gallery_id", galleryId)
+      .order("display_order", { ascending: true });
+
+    setPhotos(data || []);
+
+    const { count } = await supabase
+      .from("gallery_access")
+      .select("*", { count: "exact", head: true })
+      .eq("gallery_id", galleryId);
+
+    setDownloadCount(count || 0);
+  }, []);
+
   useEffect(() => {
-    async function load() {
-      const { data, error: err } = await supabase
+    async function loadGallery() {
+      const { data, error: galleryError } = await supabase
         .from("galleries")
         .select("*")
         .eq("slug", slug)
         .single();
 
-      if (err || !data) {
+      if (galleryError || !data) {
         setState("notfound");
         return;
       }
+
       setGallery(data);
 
-      // Check expiry
       if (data.expires_at && new Date(data.expires_at) < new Date()) {
         setState("notfound");
         return;
@@ -47,11 +64,44 @@ export default function Gallery() {
         setState("password");
       }
     }
-    load();
-  }, [slug]);
+
+    loadGallery();
+  }, [slug, loadPhotos]);
+
+  const canDownload = useCallback(() => {
+    if (!gallery || gallery.max_downloads === 0) return true;
+    return downloadCount < gallery.max_downloads;
+  }, [downloadCount, gallery]);
+
+  const triggerDownload = useCallback(
+    async (photo) => {
+      if (!photo || !gallery) return;
+
+      if (!canDownload()) {
+        alert("Download limit reached for this gallery.");
+        return;
+      }
+
+      await supabase
+        .from("gallery_access")
+        .insert([{ gallery_id: gallery.id, photo_id: photo.id }]);
+
+      setDownloadCount((previousCount) => previousCount + 1);
+
+      const url = `${BASE_GALLERY}/${photo.storage_path}`;
+      const link = document.createElement("a");
+
+      link.href = url;
+      link.download = photo.filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    },
+    [canDownload, gallery],
+  );
 
   const handlePassword = async () => {
-    if (password === gallery.password) {
+    if (password === gallery?.password) {
       await loadPhotos(gallery.id);
       setState("view");
       setError(null);
@@ -61,7 +111,7 @@ export default function Gallery() {
   };
 
   const handlePinSubmit = () => {
-    if (pin === gallery.download_pin) {
+    if (pin === gallery?.download_pin) {
       setPinError(false);
       triggerDownload(lightbox);
     } else {
@@ -69,60 +119,27 @@ export default function Gallery() {
     }
   };
 
-  async function loadPhotos(galleryId) {
-    const { data } = await supabase
-      .from("gallery_photos")
-      .select("*")
-      .eq("gallery_id", galleryId)
-      .order("display_order", { ascending: true });
-    setPhotos(data || []);
-
-    // Get download count
-    const { count } = await supabase
-      .from("gallery_access")
-      .select("*", { count: "exact", head: true })
-      .eq("gallery_id", galleryId);
-    setDownloadCount(count || 0);
-  }
-
   const toggleFavorite = (id) => {
-    setFavorites((p) => {
-      const next = new Set(p);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
+    setFavorites((previousFavorites) => {
+      const nextFavorites = new Set(previousFavorites);
+
+      if (nextFavorites.has(id)) {
+        nextFavorites.delete(id);
+      } else {
+        nextFavorites.add(id);
+      }
+
+      return nextFavorites;
     });
   };
 
-  const canDownload = () => {
-    if (gallery.max_downloads === 0) return true;
-    return downloadCount < gallery.max_downloads;
-  };
-
-  const triggerDownload = async (photo) => {
-    if (!canDownload()) {
-      alert("Download limit reached for this gallery.");
-      return;
-    }
-    // Track download
-    await supabase
-      .from("gallery_access")
-      .insert([{ gallery_id: gallery.id, photo_id: photo.id }]);
-    setDownloadCount((p) => p + 1);
-    // Trigger download
-    const url = `${BASE_GALLERY}/${photo.storage_path}`;
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = photo.filename;
-    a.click();
-  };
-
-  const handleDownloadClick = (photo) => {
-    if (gallery.download_pin) {
+  const handleDownloadClick = async (photo) => {
+    if (gallery?.download_pin) {
       setLightbox({ ...photo, awaitPin: true });
       setPin("");
       setPinError(false);
     } else {
-      triggerDownload(photo);
+      await triggerDownload(photo);
     }
   };
 
@@ -131,24 +148,35 @@ export default function Gallery() {
       alert("Download limit reached for this gallery.");
       return;
     }
-    for (const photo of photos) await handleDownloadClick(photo);
+
+    for (const photo of photos) {
+      await handleDownloadClick(photo);
+    }
   };
 
-  // Keyboard nav
   useEffect(() => {
-    if (!lightbox || lightbox.awaitPin) return;
-    const idx = photos.findIndex((p) => p.id === lightbox.id);
-    const handler = (e) => {
-      if (e.key === "Escape") setLightbox(null);
-      if (e.key === "ArrowRight" && idx < photos.length - 1)
-        setLightbox(photos[idx + 1]);
-      if (e.key === "ArrowLeft" && idx > 0) setLightbox(photos[idx - 1]);
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [lightbox, photos]);
+    if (!lightbox || lightbox.awaitPin) return undefined;
 
-  // ─── States ──────────────────────────────────────────────────────────
+    const currentIndex = photos.findIndex((photo) => photo.id === lightbox.id);
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        setLightbox(null);
+      }
+
+      if (event.key === "ArrowRight" && currentIndex < photos.length - 1) {
+        setLightbox(photos[currentIndex + 1]);
+      }
+
+      if (event.key === "ArrowLeft" && currentIndex > 0) {
+        setLightbox(photos[currentIndex - 1]);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [lightbox, photos]);
 
   if (state === "loading") {
     return (
@@ -189,6 +217,7 @@ export default function Gallery() {
           >
             Gallery Not Found
           </div>
+
           <div
             style={{
               fontFamily: "'Inter', sans-serif",
@@ -228,6 +257,7 @@ export default function Gallery() {
             >
               {gallery.title}
             </div>
+
             {gallery.client_name && (
               <div
                 style={{
@@ -240,6 +270,7 @@ export default function Gallery() {
                 {gallery.client_name}
               </div>
             )}
+
             <div
               style={{
                 width: "40px",
@@ -248,6 +279,7 @@ export default function Gallery() {
                 margin: "1rem auto",
               }}
             />
+
             <div
               style={{
                 fontFamily: "'Inter', sans-serif",
@@ -267,8 +299,8 @@ export default function Gallery() {
               type="password"
               placeholder="Gallery password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handlePassword()}
+              onChange={(event) => setPassword(event.target.value)}
+              onKeyDown={(event) => event.key === "Enter" && handlePassword()}
               style={{
                 background: "transparent",
                 border: `1px solid ${COLORS.border}`,
@@ -281,9 +313,14 @@ export default function Gallery() {
                 width: "100%",
                 boxSizing: "border-box",
               }}
-              onFocus={(e) => (e.target.style.borderColor = COLORS.gold)}
-              onBlur={(e) => (e.target.style.borderColor = COLORS.border)}
+              onFocus={(event) => {
+                event.target.style.borderColor = COLORS.gold;
+              }}
+              onBlur={(event) => {
+                event.target.style.borderColor = COLORS.border;
+              }}
             />
+
             {error && (
               <div
                 style={{
@@ -295,7 +332,9 @@ export default function Gallery() {
                 {error}
               </div>
             )}
+
             <button
+              type="button"
               onClick={handlePassword}
               style={{
                 fontFamily: "'Inter', sans-serif",
@@ -336,12 +375,12 @@ export default function Gallery() {
     );
   }
 
-  // ─── Gallery view ─────────────────────────────────────────────────────
-  const idx = lightbox ? photos.findIndex((p) => p.id === lightbox.id) : -1;
+  const lightboxIndex = lightbox
+    ? photos.findIndex((photo) => photo.id === lightbox.id)
+    : -1;
 
   return (
     <div style={{ background: COLORS.bg, minHeight: "100vh" }}>
-      {/* Gallery header */}
       <div
         style={{
           background: "rgba(10,10,10,0.95)",
@@ -367,6 +406,7 @@ export default function Gallery() {
           >
             {gallery.title}
           </div>
+
           <div
             style={{
               fontFamily: "'Inter', sans-serif",
@@ -381,6 +421,7 @@ export default function Gallery() {
               ` · ${downloadCount}/${gallery.max_downloads} downloads used`}
           </div>
         </div>
+
         <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
           {favorites.size > 0 && (
             <div
@@ -395,8 +436,10 @@ export default function Gallery() {
               ♥ {favorites.size} favorited
             </div>
           )}
+
           {canDownload() && (
             <button
+              type="button"
               onClick={downloadAll}
               style={{
                 fontFamily: "'Inter', sans-serif",
@@ -416,7 +459,6 @@ export default function Gallery() {
         </div>
       </div>
 
-      {/* Grid */}
       {photos.length === 0 ? (
         <div
           style={{
@@ -434,8 +476,12 @@ export default function Gallery() {
           style={{ padding: "1.5rem", columns: "3 240px", columnGap: "8px" }}
         >
           {photos.map((photo) => {
-            const thumbUrl = `${BASE_GALLERY}/${photo.storage_path.replace("/originals/", "/thumbnails/")}`;
-            const isFav = favorites.has(photo.id);
+            const thumbUrl = `${BASE_GALLERY}/${photo.storage_path.replace(
+              "/originals/",
+              "/thumbnails/",
+            )}`;
+            const isFavorite = favorites.has(photo.id);
+
             return (
               <div
                 key={photo.id}
@@ -447,15 +493,19 @@ export default function Gallery() {
                   background: "#111",
                   cursor: "pointer",
                 }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.querySelector(".gov").style.opacity = "1";
-                  e.currentTarget.querySelector(".gimg").style.transform =
-                    "scale(1.04)";
+                onMouseEnter={(event) => {
+                  const overlay = event.currentTarget.querySelector(".gov");
+                  const image = event.currentTarget.querySelector(".gimg");
+
+                  if (overlay) overlay.style.opacity = "1";
+                  if (image) image.style.transform = "scale(1.04)";
                 }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.querySelector(".gov").style.opacity = "0";
-                  e.currentTarget.querySelector(".gimg").style.transform =
-                    "scale(1)";
+                onMouseLeave={(event) => {
+                  const overlay = event.currentTarget.querySelector(".gov");
+                  const image = event.currentTarget.querySelector(".gimg");
+
+                  if (overlay) overlay.style.opacity = "0";
+                  if (image) image.style.transform = "scale(1)";
                 }}
               >
                 <img
@@ -469,10 +519,11 @@ export default function Gallery() {
                     display: "block",
                     transition: "transform 0.4s ease",
                   }}
-                  onError={(e) => {
-                    e.currentTarget.src = `${BASE_GALLERY}/${photo.storage_path}`;
+                  onError={(event) => {
+                    event.currentTarget.src = `${BASE_GALLERY}/${photo.storage_path}`;
                   }}
                 />
+
                 <div
                   className="gov"
                   style={{
@@ -489,8 +540,9 @@ export default function Gallery() {
                   }}
                 >
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
                       handleDownloadClick(photo);
                     }}
                     style={{
@@ -507,9 +559,11 @@ export default function Gallery() {
                   >
                     Download
                   </button>
+
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
                       toggleFavorite(photo.id);
                     }}
                     style={{
@@ -517,12 +571,12 @@ export default function Gallery() {
                       border: "none",
                       cursor: "pointer",
                       fontSize: "1.4rem",
-                      color: isFav ? COLORS.gold : COLORS.white,
+                      color: isFavorite ? COLORS.gold : COLORS.white,
                       transition: "color 0.2s",
                       lineHeight: 1,
                     }}
                   >
-                    {isFav ? "♥" : "♡"}
+                    {isFavorite ? "♥" : "♡"}
                   </button>
                 </div>
               </div>
@@ -531,7 +585,6 @@ export default function Gallery() {
         </div>
       )}
 
-      {/* Lightbox */}
       {lightbox && !lightbox.awaitPin && (
         <div
           style={{
@@ -545,6 +598,7 @@ export default function Gallery() {
           }}
         >
           <button
+            type="button"
             onClick={() => setLightbox(null)}
             style={{
               position: "absolute",
@@ -559,9 +613,11 @@ export default function Gallery() {
           >
             ✕
           </button>
-          {idx > 0 && (
+
+          {lightboxIndex > 0 && (
             <button
-              onClick={() => setLightbox(photos[idx - 1])}
+              type="button"
+              onClick={() => setLightbox(photos[lightboxIndex - 1])}
               style={{
                 position: "absolute",
                 left: "1.5rem",
@@ -575,6 +631,7 @@ export default function Gallery() {
               ‹
             </button>
           )}
+
           <img
             src={`${BASE_GALLERY}/${lightbox.storage_path}`}
             alt={lightbox.filename}
@@ -584,9 +641,11 @@ export default function Gallery() {
               objectFit: "contain",
             }}
           />
-          {idx < photos.length - 1 && (
+
+          {lightboxIndex < photos.length - 1 && (
             <button
-              onClick={() => setLightbox(photos[idx + 1])}
+              type="button"
+              onClick={() => setLightbox(photos[lightboxIndex + 1])}
               style={{
                 position: "absolute",
                 right: "1.5rem",
@@ -600,6 +659,7 @@ export default function Gallery() {
               ›
             </button>
           )}
+
           <div
             style={{
               position: "absolute",
@@ -612,6 +672,7 @@ export default function Gallery() {
             }}
           >
             <button
+              type="button"
               onClick={() => toggleFavorite(lightbox.id)}
               style={{
                 background: "none",
@@ -623,7 +684,9 @@ export default function Gallery() {
             >
               {favorites.has(lightbox.id) ? "♥" : "♡"}
             </button>
+
             <button
+              type="button"
               onClick={() => handleDownloadClick(lightbox)}
               style={{
                 fontFamily: "'Inter', sans-serif",
@@ -640,6 +703,7 @@ export default function Gallery() {
             >
               Download
             </button>
+
             <div
               style={{
                 fontFamily: "'Inter', sans-serif",
@@ -647,13 +711,12 @@ export default function Gallery() {
                 color: COLORS.muted,
               }}
             >
-              {idx + 1} / {photos.length}
+              {lightboxIndex + 1} / {photos.length}
             </div>
           </div>
         </div>
       )}
 
-      {/* PIN modal */}
       {lightbox?.awaitPin && (
         <div
           style={{
@@ -686,6 +749,7 @@ export default function Gallery() {
             >
               Download PIN
             </div>
+
             <div
               style={{
                 fontFamily: "'Inter', sans-serif",
@@ -697,12 +761,13 @@ export default function Gallery() {
             >
               Enter your download PIN to access this photo.
             </div>
+
             <input
               type="password"
               placeholder="PIN"
               value={pin}
-              onChange={(e) => setPin(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handlePinSubmit()}
+              onChange={(event) => setPin(event.target.value)}
+              onKeyDown={(event) => event.key === "Enter" && handlePinSubmit()}
               style={{
                 background: "transparent",
                 border: `1px solid ${pinError ? "#e05c5c" : COLORS.border}`,
@@ -719,6 +784,7 @@ export default function Gallery() {
                 marginBottom: "0.75rem",
               }}
             />
+
             {pinError && (
               <div
                 style={{
@@ -731,8 +797,10 @@ export default function Gallery() {
                 Incorrect PIN
               </div>
             )}
+
             <div style={{ display: "flex", gap: "0.75rem" }}>
               <button
+                type="button"
                 onClick={handlePinSubmit}
                 style={{
                   flex: 1,
@@ -750,7 +818,9 @@ export default function Gallery() {
               >
                 Download
               </button>
+
               <button
+                type="button"
                 onClick={() => setLightbox(null)}
                 style={{
                   fontFamily: "'Inter', sans-serif",
@@ -771,7 +841,6 @@ export default function Gallery() {
         </div>
       )}
 
-      {/* Branding footer */}
       <div
         style={{
           textAlign: "center",

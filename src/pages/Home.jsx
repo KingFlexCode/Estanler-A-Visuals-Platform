@@ -1,9 +1,9 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { supabase } from "../lib/supabase";
-import { COLORS, BASE } from "../lib/constants";
-import { GoldLine, Tag, Reveal, Spinner } from "../components/UI";
 import Footer from "../components/Footer";
+import { GoldLine, Reveal, Spinner, Tag } from "../components/UI";
+import { BASE, COLORS } from "../lib/constants";
+import { supabase } from "../lib/supabase";
 
 const testimonials = [
   {
@@ -26,6 +26,12 @@ const testimonials = [
   },
 ];
 
+const HERO_PHOTOS = [
+  `${BASE}/Portraits/EACP1856-Enhanced-NR.jpg`,
+  `${BASE}/Engadgements/Des%20Engadgement%20Pictures-114.jpg`,
+  `${BASE}/Portraits/EACP1809-Edit.jpg`,
+];
+
 function buildPublicUrl(path) {
   if (!path) return "";
   return `${BASE}/${path.split("/").map(encodeURIComponent).join("/")}`;
@@ -39,33 +45,29 @@ function mapPortfolioRow(image) {
     label: image.title || image.file_name,
     img: buildPublicUrl(image.thumbnail_path || image.original_path),
     fullImg: buildPublicUrl(image.original_path),
-    objectPosition: `${image.object_position_x ?? 50}% ${image.object_position_y ?? 50}%`,
+    objectPosition: `${image.object_position_x ?? 50}% ${
+      image.object_position_y ?? 50
+    }%`,
     zoom: Number(image.zoom || 1),
   };
 }
 
-// ─── Hero ─────────────────────────────────────────────────────────────
 function Hero() {
   const [loaded, setLoaded] = useState(false);
   const [bg, setBg] = useState(0);
 
-  const heroPhotos = [
-    `${BASE}/Portraits/EACP1856-Enhanced-NR.jpg`,
-    `${BASE}/Engadgements/Des%20Engadgement%20Pictures-114.jpg`,
-    `${BASE}/Portraits/EACP1809-Edit.jpg`,
-  ];
-
   useEffect(() => {
-    const t = setTimeout(() => setLoaded(true), 120);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setLoaded(true), 120);
+
+    return () => clearTimeout(timer);
   }, []);
 
   useEffect(() => {
-    const t = setInterval(
-      () => setBg((p) => (p + 1) % heroPhotos.length),
-      5000,
-    );
-    return () => clearInterval(t);
+    const timer = setInterval(() => {
+      setBg((previousIndex) => (previousIndex + 1) % HERO_PHOTOS.length);
+    }, 5000);
+
+    return () => clearInterval(timer);
   }, []);
 
   return (
@@ -80,7 +82,7 @@ function Hero() {
         background: COLORS.bg,
       }}
     >
-      {heroPhotos.map((src, i) => (
+      {HERO_PHOTOS.map((src, index) => (
         <div
           key={src}
           style={{
@@ -89,11 +91,12 @@ function Hero() {
             backgroundImage: `url(${src})`,
             backgroundSize: "cover",
             backgroundPosition: "center 30%",
-            opacity: bg === i ? (loaded ? 0.6 : 0) : 0,
+            opacity: bg === index ? (loaded ? 0.6 : 0) : 0,
             transition: "opacity 1.4s ease",
           }}
         />
       ))}
+
       <div
         style={{
           position: "absolute",
@@ -102,6 +105,7 @@ function Hero() {
             "linear-gradient(to top, rgba(10,10,10,0.95) 0%, rgba(10,10,10,0.2) 60%, rgba(10,10,10,0.1) 100%)",
         }}
       />
+
       <div
         style={{
           position: "absolute",
@@ -132,6 +136,7 @@ function Hero() {
         >
           <Tag>Photography · Film · Visual Storytelling</Tag>
         </div>
+
         <h1
           style={{
             fontFamily: "'Playfair Display', serif",
@@ -149,7 +154,9 @@ function Hero() {
           <br />
           <span style={{ color: COLORS.gold }}>Tells Your Story</span>
         </h1>
+
         <GoldLine />
+
         <p
           style={{
             fontFamily: "'Inter', sans-serif",
@@ -168,6 +175,7 @@ function Hero() {
           quinceañeras, portraits, music videos, and commercial work — crafted
           with cinematic precision.
         </p>
+
         <div
           style={{
             display: "flex",
@@ -193,6 +201,7 @@ function Hero() {
           >
             View Work
           </Link>
+
           <Link
             to="/book"
             style={{
@@ -238,6 +247,7 @@ function Hero() {
         >
           Scroll
         </div>
+
         <div
           style={{
             width: "1px",
@@ -250,15 +260,12 @@ function Hero() {
   );
 }
 
-// ─── Featured Work (home preview — first 6 featured photos) ─────────────
 function FeaturedWork() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function fetchFeatured() {
-      setLoading(true);
-
       const { data, error } = await supabase
         .from("portfolio_images")
         .select("*")
@@ -278,6 +285,7 @@ function FeaturedWork() {
       setItems((data || []).map(mapPortfolioRow));
       setLoading(false);
     }
+
     fetchFeatured();
   }, []);
 
@@ -313,6 +321,7 @@ function FeaturedWork() {
               Recent Sessions
             </h2>
           </div>
+
           <Link
             to="/work"
             style={{
@@ -347,15 +356,23 @@ function FeaturedWork() {
                 overflow: "hidden",
                 cursor: "pointer",
               }}
-              onMouseEnter={(e) => {
-                e.currentTarget.querySelector(".ov").style.opacity = "1";
-                e.currentTarget.querySelector(".gi").style.transform =
-                  `scale(${(item.zoom || 1) * 1.05})`;
+              onMouseEnter={(event) => {
+                const overlay = event.currentTarget.querySelector(".ov");
+                const image = event.currentTarget.querySelector(".gi");
+
+                if (overlay) overlay.style.opacity = "1";
+                if (image) {
+                  image.style.transform = `scale(${(item.zoom || 1) * 1.05})`;
+                }
               }}
-              onMouseLeave={(e) => {
-                e.currentTarget.querySelector(".ov").style.opacity = "0";
-                e.currentTarget.querySelector(".gi").style.transform =
-                  `scale(${item.zoom || 1})`;
+              onMouseLeave={(event) => {
+                const overlay = event.currentTarget.querySelector(".ov");
+                const image = event.currentTarget.querySelector(".gi");
+
+                if (overlay) overlay.style.opacity = "0";
+                if (image) {
+                  image.style.transform = `scale(${item.zoom || 1})`;
+                }
               }}
             >
               <img
@@ -372,10 +389,11 @@ function FeaturedWork() {
                   transition: "transform 0.5s ease",
                   transform: `scale(${item.zoom || 1})`,
                 }}
-                onError={(e) => {
-                  e.currentTarget.parentElement.style.display = "none";
+                onError={(event) => {
+                  event.currentTarget.parentElement.style.display = "none";
                 }}
               />
+
               <div
                 className="ov"
                 style={{
@@ -401,6 +419,7 @@ function FeaturedWork() {
                   >
                     {item.label}
                   </div>
+
                   <Tag>{item.category}</Tag>
                 </div>
               </div>
@@ -412,7 +431,6 @@ function FeaturedWork() {
   );
 }
 
-// ─── Services preview ─────────────────────────────────────────────────
 function ServicesPreview() {
   const services = [
     { icon: "💍", label: "Weddings" },
@@ -445,6 +463,7 @@ function ServicesPreview() {
           Services
         </h2>
       </Reveal>
+
       <div
         style={{
           display: "grid",
@@ -454,14 +473,15 @@ function ServicesPreview() {
           marginBottom: "3rem",
         }}
       >
-        {services.map((s, i) => (
-          <Reveal key={s.label} delay={i * 0.05}>
+        {services.map((service, index) => (
+          <Reveal key={service.label} delay={index * 0.05}>
             <div
               style={{ background: COLORS.surface, padding: "1.75rem 1.5rem" }}
             >
               <div style={{ fontSize: "1.4rem", marginBottom: "0.75rem" }}>
-                {s.icon}
+                {service.icon}
               </div>
+
               <div
                 style={{
                   fontFamily: "'Playfair Display', serif",
@@ -470,12 +490,13 @@ function ServicesPreview() {
                   color: COLORS.white,
                 }}
               >
-                {s.label}
+                {service.label}
               </div>
             </div>
           </Reveal>
         ))}
       </div>
+
       <div style={{ textAlign: "center" }}>
         <Link
           to="/services"
@@ -499,7 +520,6 @@ function ServicesPreview() {
   );
 }
 
-// ─── Book CTA ─────────────────────────────────────────────────────────
 function BookCTA() {
   return (
     <section
@@ -512,6 +532,7 @@ function BookCTA() {
     >
       <Reveal>
         <Tag>Ready to Begin</Tag>
+
         <h2
           style={{
             fontFamily: "'Playfair Display', serif",
@@ -527,7 +548,9 @@ function BookCTA() {
           <br />
           <span style={{ color: COLORS.gold }}>Extraordinary</span>
         </h2>
+
         <GoldLine w="60px" mt="1.5rem" mb="1.5rem" />
+
         <p
           style={{
             fontFamily: "'Inter', sans-serif",
@@ -542,6 +565,7 @@ function BookCTA() {
           Every great image starts with a conversation. Tell me about your
           vision and I'll bring it to life.
         </p>
+
         <Link
           to="/book"
           style={{
@@ -564,15 +588,15 @@ function BookCTA() {
   );
 }
 
-// ─── Testimonials ─────────────────────────────────────────────────────
 function Testimonials() {
   const [active, setActive] = useState(0);
+
   useEffect(() => {
-    const t = setInterval(
-      () => setActive((p) => (p + 1) % testimonials.length),
-      6000,
-    );
-    return () => clearInterval(t);
+    const timer = setInterval(() => {
+      setActive((previousIndex) => (previousIndex + 1) % testimonials.length);
+    }, 6000);
+
+    return () => clearInterval(timer);
   }, []);
 
   return (
@@ -586,6 +610,7 @@ function Testimonials() {
     >
       <Reveal>
         <Tag>Client Stories</Tag>
+
         <h2
           style={{
             fontFamily: "'Playfair Display', serif",
@@ -599,11 +624,12 @@ function Testimonials() {
           What Clients Say
         </h2>
       </Reveal>
+
       <div style={{ maxWidth: "620px", margin: "0 auto", minHeight: "180px" }}>
-        {testimonials.map((t, i) => (
+        {testimonials.map((testimonial, index) => (
           <div
-            key={t.name}
-            style={{ display: active === i ? "block" : "none" }}
+            key={testimonial.name}
+            style={{ display: active === index ? "block" : "none" }}
           >
             <div
               style={{
@@ -615,8 +641,9 @@ function Testimonials() {
                 marginBottom: "1.5rem",
               }}
             >
-              "{t.text}"
+              "{testimonial.text}"
             </div>
+
             <div
               style={{
                 fontFamily: "'Inter', sans-serif",
@@ -626,12 +653,14 @@ function Testimonials() {
                 marginBottom: "3px",
               }}
             >
-              {t.name}
+              {testimonial.name}
             </div>
-            <Tag>{t.session}</Tag>
+
+            <Tag>{testimonial.session}</Tag>
           </div>
         ))}
       </div>
+
       <div
         style={{
           display: "flex",
@@ -640,14 +669,15 @@ function Testimonials() {
           marginTop: "2.5rem",
         }}
       >
-        {testimonials.map((_, i) => (
+        {testimonials.map((testimonial, index) => (
           <button
-            key={i}
-            onClick={() => setActive(i)}
+            key={testimonial.name}
+            type="button"
+            onClick={() => setActive(index)}
             style={{
-              width: i === active ? "24px" : "6px",
+              width: index === active ? "24px" : "6px",
               height: "6px",
-              background: i === active ? COLORS.gold : COLORS.border,
+              background: index === active ? COLORS.gold : COLORS.border,
               border: "none",
               cursor: "pointer",
               transition: "all 0.3s ease",

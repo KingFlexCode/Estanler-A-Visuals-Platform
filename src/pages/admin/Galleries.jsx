@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
-import { COLORS, BASE } from "../../lib/constants";
+import { COLORS } from "../../lib/constants";
 import { AdminNav } from "./Dashboard";
 import { Spinner } from "../../components/UI";
 
