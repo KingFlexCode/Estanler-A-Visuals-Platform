@@ -151,21 +151,25 @@ create trigger set_client_gallery_images_updated_at
 before update on public.client_gallery_images
 for each row execute function public.set_updated_at();
 
--- Add the cover-image foreign key after both tables exist.
-do $$
-begin
-  if not exists (
+-- The first EST-71 draft briefly used cover_image_id as a portfolio_images reference.
+-- Clear any old cover value that does not point to a client_gallery_images row,
+-- then recreate the correct gallery-photo foreign key.
+alter table public.client_galleries drop constraint if exists client_galleries_cover_image_id_fkey;
+
+update public.client_galleries as gallery
+set cover_image_id = null
+where cover_image_id is not null
+  and not exists (
     select 1
-    from pg_constraint
-    where conname = 'client_galleries_cover_image_id_fkey'
-  ) then
-    alter table public.client_galleries
-      add constraint client_galleries_cover_image_id_fkey
-      foreign key (cover_image_id)
-      references public.client_gallery_images(id)
-      on delete set null;
-  end if;
-end $$;
+    from public.client_gallery_images as photo
+    where photo.id = gallery.cover_image_id
+  );
+
+alter table public.client_galleries
+  add constraint client_galleries_cover_image_id_fkey
+  foreign key (cover_image_id)
+  references public.client_gallery_images(id)
+  on delete set null;
 
 alter table public.client_galleries enable row level security;
 alter table public.client_gallery_sections enable row level security;
