@@ -1,7 +1,13 @@
+<<<<<<< HEAD
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { BASE, CATEGORY_LABELS, COLORS } from "../lib/constants";
+=======
+import { useEffect, useMemo, useState } from "react";
+>>>>>>> est-71-client-gallery-core-collection-workspace
 import Footer from "../components/Footer";
+import { BASE, CATEGORY_LABELS, COLORS } from "../lib/constants";
+import { supabase } from "../lib/supabase";
 
 const FILTERS = ["All", ...Object.values(CATEGORY_LABELS)];
 
@@ -12,6 +18,7 @@ function buildPublicUrl(path) {
 
 function mapPortfolioImage(image) {
   const gridPath =
+<<<<<<< HEAD
     image.thumbnail_path || image.display_path || image.original_path;
 
   const lightboxPath =
@@ -24,6 +31,19 @@ function mapPortfolioImage(image) {
     img: buildPublicUrl(gridPath),
     fullImg: buildPublicUrl(lightboxPath),
     originalImg: buildPublicUrl(image.original_path),
+=======
+    image.display_path || image.original_path || image.thumbnail_path;
+
+  const lightboxPath =
+    image.original_path || image.display_path || image.thumbnail_path;
+
+  return {
+    id: image.id,
+    category: image.category,
+    label: image.title || image.file_name || "Portfolio image",
+    img: buildPublicUrl(gridPath),
+    fullImg: buildPublicUrl(lightboxPath),
+>>>>>>> est-71-client-gallery-core-collection-workspace
     aspect: image.aspect_ratio || "4 / 5",
     objectPosition: `${image.object_position_x ?? 50}% ${
       image.object_position_y ?? 15
@@ -81,6 +101,7 @@ function CategoryNav({ active, onChange, counts }) {
         const categoryKey = Object.keys(CATEGORY_LABELS).find(
           (key) => CATEGORY_LABELS[key] === filter,
         );
+
         const count =
           filter === "All"
             ? Object.values(counts).reduce((total, value) => total + value, 0)
@@ -93,19 +114,31 @@ function CategoryNav({ active, onChange, counts }) {
             onClick={() => onChange(filter)}
             style={{
               fontFamily: "var(--font-body)",
+<<<<<<< HEAD
               fontWeight: isActive ? 700 : 400,
               fontSize: "12px",
               letterSpacing: "0.08em",
+=======
+              fontWeight: isActive ? 700 : 500,
+              fontSize: 12,
+              letterSpacing: "0.12em",
+>>>>>>> est-71-client-gallery-core-collection-workspace
               color: isActive ? COLORS.text : COLORS.muted,
-              background: "none",
+              background: isActive ? COLORS.surfaceDark : "transparent",
               border: "none",
+              borderLeft: isActive ? `1px solid ${COLORS.gold}` : "none",
+              borderRight: isActive ? `1px solid ${COLORS.gold}` : "none",
               borderBottom: isActive
                 ? `2px solid ${COLORS.gold}`
                 : "2px solid transparent",
               padding: "1rem 1.25rem 0.875rem",
               cursor: "pointer",
               whiteSpace: "nowrap",
+<<<<<<< HEAD
               transition: "all var(--transition-fast)",
+=======
+              transition: "all 0.2s ease",
+>>>>>>> est-71-client-gallery-core-collection-workspace
               marginBottom: "-1px",
               textTransform: "uppercase",
             }}
@@ -114,10 +147,14 @@ function CategoryNav({ active, onChange, counts }) {
             {count > 0 && (
               <span
                 style={{
-                  marginLeft: "6px",
-                  fontSize: "10px",
+                  marginLeft: 6,
+                  fontSize: 10,
                   color: isActive ? COLORS.gold : COLORS.muted,
+<<<<<<< HEAD
                   opacity: 0.72,
+=======
+                  opacity: 0.85,
+>>>>>>> est-71-client-gallery-core-collection-workspace
                 }}
               >
                 ({count})
@@ -126,11 +163,13 @@ function CategoryNav({ active, onChange, counts }) {
           </button>
         );
       })}
+
       <style>{`::-webkit-scrollbar { display: none; }`}</style>
     </div>
   );
 }
 
+<<<<<<< HEAD
 function chunkItems(items) {
   const groups = [];
   let index = 0;
@@ -256,15 +295,19 @@ function CollageRow({ items, onSelect, startIndex }) {
     );
   }
 
+=======
+function MasonryGrid({ items, onSelect }) {
+  if (items.length === 0) return null;
+
+>>>>>>> est-71-client-gallery-core-collection-workspace
   return (
     <div
       style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(3, 1fr)",
-        gap: "4px",
-        height: "clamp(180px, 28vw, 340px)",
+        columns: "4 280px",
+        columnGap: 6,
       }}
     >
+<<<<<<< HEAD
       {items.map((item, index) => (
         <PhotoTile
           key={item.id}
@@ -272,6 +315,10 @@ function CollageRow({ items, onSelect, startIndex }) {
           index={startIndex + index}
           onSelect={onSelect}
         />
+=======
+      {items.map((item) => (
+        <PhotoTile key={item.id} item={item} onSelect={onSelect} />
+>>>>>>> est-71-client-gallery-core-collection-workspace
       ))}
     </div>
   );
@@ -279,24 +326,42 @@ function CollageRow({ items, onSelect, startIndex }) {
 
 function PhotoTile({ item, onSelect }) {
   const [hovered, setHovered] = useState(false);
-  const baseZoom = item.zoom || 1;
 
   return (
     <button
       type="button"
+<<<<<<< HEAD
+=======
+      aria-label={`Open ${item.label || "portfolio image"}`}
+>>>>>>> est-71-client-gallery-core-collection-workspace
       onClick={() => onSelect(item)}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
         position: "relative",
-        overflow: "hidden",
-        cursor: "pointer",
+        display: "block",
+        width: "100%",
+        breakInside: "avoid",
+        margin: "0 0 6px",
+        padding: 0,
+        border: "none",
         background: COLORS.surface,
+<<<<<<< HEAD
         height: "100%",
         border: "none",
         padding: 0,
         display: "block",
         width: "100%",
+=======
+        cursor: "pointer",
+        overflow: "hidden",
+        textAlign: "left",
+        transform: hovered ? "translateY(-4px) scale(1.012)" : "none",
+        boxShadow: hovered ? "0 18px 40px rgba(0, 0, 0, 0.28)" : "none",
+        zIndex: hovered ? 2 : 1,
+        transition:
+          "transform 0.28s ease, box-shadow 0.28s ease, filter 0.28s ease",
+>>>>>>> est-71-client-gallery-core-collection-workspace
       }}
     >
       <img
@@ -306,19 +371,41 @@ function PhotoTile({ item, onSelect }) {
         decoding="async"
         style={{
           width: "100%",
+<<<<<<< HEAD
           height: "100%",
           objectFit: "cover",
           objectPosition: item.objectPosition || "50% 15%",
+=======
+          height: "auto",
+>>>>>>> est-71-client-gallery-core-collection-workspace
           display: "block",
-          transform: hovered
-            ? `scale(${baseZoom * 1.04})`
-            : `scale(${baseZoom})`,
-          transition: "transform 0.5s ease",
+          filter: hovered ? "brightness(1.06) contrast(1.03)" : "none",
+          transition: "filter 0.28s ease",
         }}
         onError={(event) => {
           event.currentTarget.parentElement.style.display = "none";
         }}
       />
+<<<<<<< HEAD
+=======
+
+      <span
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          inset: 0,
+          border: hovered
+            ? `1px solid ${COLORS.gold}`
+            : "1px solid transparent",
+          boxShadow: hovered
+            ? "inset 0 0 0 1px rgba(255, 255, 255, 0.08)"
+            : "none",
+          opacity: hovered ? 0.9 : 0,
+          transition: "opacity 0.28s ease, border-color 0.28s ease",
+          pointerEvents: "none",
+        }}
+      />
+>>>>>>> est-71-client-gallery-core-collection-workspace
     </button>
   );
 }
@@ -329,9 +416,17 @@ function Lightbox({ item, items, onClose, onNav }) {
   useEffect(() => {
     const handler = (event) => {
       if (event.key === "Escape") onClose();
+<<<<<<< HEAD
       if (event.key === "ArrowRight" && index < items.length - 1) {
         onNav(items[index + 1]);
       }
+=======
+
+      if (event.key === "ArrowRight" && index < items.length - 1) {
+        onNav(items[index + 1]);
+      }
+
+>>>>>>> est-71-client-gallery-core-collection-workspace
       if (event.key === "ArrowLeft" && index > 0) {
         onNav(items[index - 1]);
       }
@@ -364,6 +459,7 @@ function Lightbox({ item, items, onClose, onNav }) {
           position: "absolute",
           top: "1.5rem",
           right: "1.5rem",
+<<<<<<< HEAD
           background: "transparent",
           border: `1px solid ${COLORS.border}`,
           color: COLORS.text,
@@ -373,6 +469,15 @@ function Lightbox({ item, items, onClose, onNav }) {
           opacity: 0.9,
           width: "42px",
           height: "42px",
+=======
+          background: "rgba(0,0,0,0.25)",
+          border: `1px solid ${COLORS.border}`,
+          color: COLORS.text,
+          fontSize: "1.2rem",
+          cursor: "pointer",
+          zIndex: 201,
+          padding: "0.75rem 1rem",
+>>>>>>> est-71-client-gallery-core-collection-workspace
         }}
       >
         ✕
@@ -389,6 +494,7 @@ function Lightbox({ item, items, onClose, onNav }) {
           style={{
             position: "absolute",
             left: "1.5rem",
+<<<<<<< HEAD
             background: "transparent",
             border: "none",
             color: COLORS.text,
@@ -396,6 +502,15 @@ function Lightbox({ item, items, onClose, onNav }) {
             cursor: "pointer",
             zIndex: 201,
             opacity: 0.7,
+=======
+            background: "rgba(0,0,0,0.25)",
+            border: `1px solid ${COLORS.border}`,
+            color: COLORS.text,
+            fontSize: "2rem",
+            cursor: "pointer",
+            zIndex: 201,
+            padding: "0.75rem 1rem",
+>>>>>>> est-71-client-gallery-core-collection-workspace
           }}
         >
           ‹
@@ -405,6 +520,7 @@ function Lightbox({ item, items, onClose, onNav }) {
       <img
         src={item.fullImg || item.img}
         alt={item.label}
+<<<<<<< HEAD
         decoding="async"
         onClick={(event) => event.stopPropagation()}
         style={{
@@ -412,6 +528,13 @@ function Lightbox({ item, items, onClose, onNav }) {
           maxHeight: "88vh",
           objectFit: "contain",
           border: `1px solid ${COLORS.borderDark}`,
+=======
+        onClick={(event) => event.stopPropagation()}
+        style={{
+          maxWidth: "92vw",
+          maxHeight: "88vh",
+          objectFit: "contain",
+>>>>>>> est-71-client-gallery-core-collection-workspace
           background: COLORS.bg,
         }}
       />
@@ -427,6 +550,7 @@ function Lightbox({ item, items, onClose, onNav }) {
           style={{
             position: "absolute",
             right: "1.5rem",
+<<<<<<< HEAD
             background: "transparent",
             border: "none",
             color: COLORS.text,
@@ -434,6 +558,15 @@ function Lightbox({ item, items, onClose, onNav }) {
             cursor: "pointer",
             zIndex: 201,
             opacity: 0.7,
+=======
+            background: "rgba(0,0,0,0.25)",
+            border: `1px solid ${COLORS.border}`,
+            color: COLORS.text,
+            fontSize: "2rem",
+            cursor: "pointer",
+            zIndex: 201,
+            padding: "0.75rem 1rem",
+>>>>>>> est-71-client-gallery-core-collection-workspace
           }}
         >
           ›
@@ -470,7 +603,9 @@ export default function Work() {
         return;
       }
 
-      const results = (data || []).map(mapPortfolioImage);
+      const results = (data || [])
+        .map(mapPortfolioImage)
+        .filter((item) => item.img);
       setAllItems(results);
       setCounts(getCategoryCounts(results));
       setLoading(false);
@@ -479,10 +614,18 @@ export default function Work() {
     fetchAll();
   }, []);
 
+<<<<<<< HEAD
   const filtered =
     filter === "All"
       ? allItems
       : allItems.filter((item) => CATEGORY_LABELS[item.category] === filter);
+=======
+  const filtered = useMemo(() => {
+    if (filter === "All") return allItems;
+
+    return allItems.filter((item) => CATEGORY_LABELS[item.category] === filter);
+  }, [allItems, filter]);
+>>>>>>> est-71-client-gallery-core-collection-workspace
 
   return (
     <div style={{ background: COLORS.bg, minHeight: "100vh" }}>
@@ -496,7 +639,11 @@ export default function Work() {
         <CategoryNav active={filter} onChange={setFilter} counts={counts} />
       </div>
 
+<<<<<<< HEAD
       <div style={{ padding: "4px" }}>
+=======
+      <div style={{ padding: 6 }}>
+>>>>>>> est-71-client-gallery-core-collection-workspace
         {loading && <Spinner />}
 
         {!loading && filtered.length === 0 && (
@@ -515,7 +662,7 @@ export default function Work() {
         )}
 
         {!loading && filtered.length > 0 && (
-          <CollageGrid items={filtered} onSelect={setLightbox} />
+          <MasonryGrid items={filtered} onSelect={setLightbox} />
         )}
       </div>
 

@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { COLORS, BASE } from "../lib/constants";
 import { Tag, GoldLine, Reveal } from "../components/UI";
 import Footer from "../components/Footer";
+import aboutPhoto from "../assets/my_about_picture.png";
 
 export default function About() {
   return (
@@ -34,8 +35,10 @@ export default function About() {
               }}
             >
               <img
-                src={`${BASE}/potraits/originals/EACP1253.jpg`}
-                alt="Estanler A"
+                src={aboutPhoto}
+                alt="Estanler Aleman, photographer and visual storyteller"
+                loading="lazy"
+                decoding="async"
                 style={{
                   width: "100%",
                   height: "100%",
@@ -119,9 +122,9 @@ export default function About() {
               style={{ display: "flex", gap: "2.5rem", marginBottom: "2.5rem" }}
             >
               {[
-                ["10+", "Years"],
-                ["800+", "Sessions"],
-                ["50+", "Films"],
+                ["15+", "Years"],
+                ["100+", "Sessions"],
+                ["20+", "Films"],
               ].map(([n, l]) => (
                 <div key={l}>
                   <div
