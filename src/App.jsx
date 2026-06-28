@@ -14,14 +14,17 @@ import Gallery from "./pages/Gallery";
 import AdminLogin from "./pages/admin/Login";
 import Dashboard from "./pages/admin/Dashboard";
 import Galleries from "./pages/admin/Galleries";
+import GalleryEditor from "./pages/admin/GalleryEditor";
 import PortfolioAdmin from "./pages/admin/Portfolio";
 import Inquiries from "./pages/admin/Inquiries";
 
 function ScrollToTop() {
   const { pathname } = useLocation();
+
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [pathname]);
+
   return null;
 }
 
@@ -29,10 +32,11 @@ function FontLoader() {
   useEffect(() => {
     const link = document.createElement("link");
     link.href =
-      "https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@300;400;500&display=swap";
+      "https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@300;400;500;600;700&display=swap";
     link.rel = "stylesheet";
     document.head.appendChild(link);
   }, []);
+
   return null;
 }
 
@@ -54,7 +58,9 @@ function Layout() {
     <>
       <FontLoader />
       <ScrollToTop />
+
       {showNav && <Nav />}
+
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/work" element={<Work />} />
@@ -63,7 +69,9 @@ function Layout() {
         <Route path="/book" element={<Book />} />
         <Route path="/shop" element={<Shop />} />
         <Route path="/gallery/:slug" element={<Gallery />} />
+
         <Route path="/admin/login" element={<AdminLogin />} />
+
         <Route
           path="/admin"
           element={
@@ -72,6 +80,7 @@ function Layout() {
             </ProtectedRoute>
           }
         />
+
         <Route
           path="/admin/galleries"
           element={
@@ -80,6 +89,16 @@ function Layout() {
             </ProtectedRoute>
           }
         />
+
+        <Route
+          path="/admin/galleries/:galleryId"
+          element={
+            <ProtectedRoute>
+              <GalleryEditor />
+            </ProtectedRoute>
+          }
+        />
+
         <Route
           path="/admin/portfolio"
           element={
@@ -88,6 +107,7 @@ function Layout() {
             </ProtectedRoute>
           }
         />
+
         <Route
           path="/admin/inquiries"
           element={
@@ -96,6 +116,7 @@ function Layout() {
             </ProtectedRoute>
           }
         />
+
         <Route
           path="*"
           element={

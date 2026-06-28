@@ -19,17 +19,15 @@ const services = [
     ],
   },
   {
-    id: "quinceaneras",
-    icon: "👑",
-    label: "Quinceañeras",
-    desc: "Cultural celebrations captured with elegance and joy. A quinceañera is a once-in-a-lifetime event — treated with the reverence it deserves.",
+    id: "engagements",
+    icon: "✨",
+    label: "Engagements",
+    desc: "Intimate sessions that tell your love story. Perfect standalone or as a complement to wedding coverage.",
     includes: [
-      "Full day coverage",
-      "Traditional ceremonies",
-      "Court of honor",
-      "Dance performances",
-      "Family portraits",
+      "1-2 hour session",
+      "Location of choice",
       "Online gallery",
+      "Print-ready files",
     ],
   },
   {
@@ -47,20 +45,22 @@ const services = [
     ],
   },
   {
-    id: "engagements",
-    icon: "✨",
-    label: "Engagements",
-    desc: "Intimate sessions that tell your love story. Perfect standalone or as a complement to wedding coverage.",
+    id: "birthday-celebrations",
+    icon: "🎂",
+    label: "Birthday Celebrations",
+    desc: "Milestone birthdays captured with style and joy, preserving the moments, details, and memories that make the celebration unforgettable.",
     includes: [
-      "1-2 hour session",
-      "Location of choice",
+      "Event coverage",
+      "Decor and detail shots",
+      "Cake cutting",
+      "Candid moments",
+      "Family and guest portraits",
       "Online gallery",
-      "Print-ready files",
     ],
   },
   {
     id: "family",
-    icon: "🌿",
+    icon: "🧑‍🧑‍🧒‍🧒",
     label: "Family Sessions",
     desc: "Lifestyle family photography — natural, relaxed, and authentic. Documenting your family as it is right now.",
     includes: [
@@ -153,7 +153,6 @@ export default function Services() {
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
-            gap: "1px",
             background: COLORS.border,
           }}
         >
@@ -162,7 +161,9 @@ export default function Services() {
               <div
                 style={{
                   background: COLORS.bg,
-                  padding: "2.5rem 2rem",
+                  padding: "2rem",
+                  height: "450px",
+                  margin: "5px",
                   transition: "background 0.25s",
                 }}
                 onMouseEnter={(e) =>
@@ -194,6 +195,7 @@ export default function Services() {
                     color: COLORS.muted,
                     lineHeight: 1.75,
                     marginBottom: "1.5rem",
+                    height: "100px",
                   }}
                 >
                   {s.desc}

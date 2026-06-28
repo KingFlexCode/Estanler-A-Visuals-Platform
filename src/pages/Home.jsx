@@ -26,11 +26,19 @@ const testimonials = [
   },
 ];
 
-const HERO_PHOTOS = [
-  `${BASE}/Portraits/originals/EACP1856-Enhanced-NR.jpeg`,
-  `${BASE}/Engadgements/originals/Des%20Engadgement%20Pictures-114.jpeg`,
-  `${BASE}/Portraits/originals/EACP1809-Edit.jpeg`,
-];
+function mapHeroRow(image) {
+  const heroPath =
+    image.display_path || image.original_path || image.thumbnail_path;
+
+  return {
+    id: image.id,
+    src: buildPublicUrl(heroPath),
+    objectPosition: `${image.object_position_x ?? 50}% ${
+      image.object_position_y ?? 15
+    }%`,
+    zoom: Number(image.zoom || 1),
+  };
+}
 
 function buildPublicUrl(path) {
   if (!path) return "";
@@ -38,15 +46,21 @@ function buildPublicUrl(path) {
 }
 
 function mapPortfolioRow(image) {
+  const gridPath =
+    image.display_path || image.original_path || image.thumbnail_path;
+
+  const previewPath =
+    image.original_path || image.display_path || image.thumbnail_path;
+
   return {
     id: image.id,
     category: image.category,
     aspect: image.aspect_ratio || "4 / 5",
     label: image.title || image.file_name,
-    img: buildPublicUrl(image.thumbnail_path || image.original_path),
-    fullImg: buildPublicUrl(image.original_path),
+    img: buildPublicUrl(gridPath),
+    fullImg: buildPublicUrl(previewPath),
     objectPosition: `${image.object_position_x ?? 50}% ${
-      image.object_position_y ?? 50
+      image.object_position_y ?? 15
     }%`,
     zoom: Number(image.zoom || 1),
   };
@@ -55,22 +69,56 @@ function mapPortfolioRow(image) {
 function Hero() {
   const [loaded, setLoaded] = useState(false);
   const [backgroundIndex, setBackgroundIndex] = useState(0);
+  const [heroPhotos, setHeroPhotos] = useState([]);
 
   useEffect(() => {
     const timer = setTimeout(() => setLoaded(true), 120);
-
     return () => clearTimeout(timer);
   }, []);
 
   useEffect(() => {
+    async function fetchHeroPhotos() {
+      const { data, error } = await supabase
+        .from("portfolio_images")
+        .select(
+          "id,display_path,original_path,thumbnail_path,object_position_x,object_position_y,zoom,featured,display_order,created_at",
+        )
+        .eq("is_visible", true)
+        .eq("featured", true)
+        .neq("category", "unlisted")
+        .order("display_order", { ascending: true })
+        .order("created_at", { ascending: false })
+        .limit(8);
+
+      if (error) {
+        console.error("Error loading hero portfolio images:", error);
+        setHeroPhotos([]);
+        return;
+      }
+
+      setHeroPhotos((data || []).map(mapHeroRow).filter((item) => item.src));
+    }
+
+    fetchHeroPhotos();
+  }, []);
+
+  useEffect(() => {
+    if (heroPhotos.length <= 1) return undefined;
+
     const timer = setInterval(() => {
       setBackgroundIndex(
-        (previousIndex) => (previousIndex + 1) % HERO_PHOTOS.length,
+        (previousIndex) => (previousIndex + 1) % heroPhotos.length,
       );
     }, 5000);
 
     return () => clearInterval(timer);
-  }, []);
+  }, [heroPhotos.length]);
+
+  useEffect(() => {
+    if (backgroundIndex >= heroPhotos.length) {
+      setBackgroundIndex(0);
+    }
+  }, [backgroundIndex, heroPhotos.length]);
 
   return (
     <section
@@ -84,16 +132,22 @@ function Hero() {
         background: COLORS.bg,
       }}
     >
-      {HERO_PHOTOS.map((src, index) => (
-        <div
-          key={src}
+      {heroPhotos.map((photo, index) => (
+        <img
+          key={photo.id}
+          src={photo.src}
+          alt="Featured portfolio background"
+          loading={index === 0 ? "eager" : "lazy"}
+          decoding="async"
           style={{
             position: "absolute",
             inset: 0,
-            backgroundImage: `url(${src})`,
-            backgroundSize: "cover",
-            backgroundPosition: "center 30%",
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            objectPosition: photo.objectPosition,
             opacity: backgroundIndex === index ? (loaded ? 0.42 : 0) : 0,
+            transform: `scale(${photo.zoom || 1})`,
             transition: "opacity 1.4s ease",
           }}
         />
@@ -255,9 +309,10 @@ function FeaturedWork() {
         .select("*")
         .eq("is_visible", true)
         .eq("featured", true)
+        .neq("category", "unlisted")
+        .order("featured_order", { ascending: true, nullsFirst: false })
         .order("display_order", { ascending: true })
-        .order("created_at", { ascending: false })
-        .limit(6);
+        .order("created_at", { ascending: false });
 
       if (error) {
         console.error("Error loading featured portfolio images:", error);
@@ -275,9 +330,11 @@ function FeaturedWork() {
 
   return (
     <section
+      onContextMenu={(event) => event.preventDefault()}
       style={{
         background: COLORS.bg,
         padding: "6rem var(--page-x)",
+        userSelect: "none",
       }}
     >
       <Reveal>
@@ -303,8 +360,22 @@ function FeaturedWork() {
                 margin: "0.5rem 0 0",
               }}
             >
-              Recent Sessions
+              Featured Work
             </h2>
+
+            <p
+              style={{
+                fontFamily: "var(--font-body)",
+                color: COLORS.muted,
+                fontSize: "0.95rem",
+                lineHeight: 1.7,
+                maxWidth: "560px",
+                margin: "0.8rem 0 0",
+              }}
+            >
+              A handpicked collection of moments I’m proud to share with you,
+              each one captured with care, emotion, and intention.
+            </p>
           </div>
 
           <Link
@@ -327,173 +398,113 @@ function FeaturedWork() {
 
       {loading ? (
         <Spinner />
+      ) : items.length === 0 ? (
+        <div
+          style={{
+            border: `1px dashed ${COLORS.border}`,
+            color: COLORS.muted,
+            fontFamily: "var(--font-body)",
+            fontSize: "0.9rem",
+            padding: "3rem 1rem",
+            textAlign: "center",
+          }}
+        >
+          No featured images selected yet.
+        </div>
       ) : (
-        <div style={{ columns: "3 240px", columnGap: "10px" }}>
+        <div
+          className="featured-work-grid"
+          aria-label="Featured portfolio image grid"
+          style={{
+            display: "grid",
+            gap: 0,
+            alignItems: "start",
+          }}
+        >
           {items.map((item) => (
-            <div
+            <figure
               key={item.id}
               style={{
-                breakInside: "avoid",
-                marginBottom: "10px",
+                margin: 0,
                 aspectRatio: item.aspect,
                 background: COLORS.surfaceDark,
-                border: `1px solid ${COLORS.borderDark}`,
                 position: "relative",
                 overflow: "hidden",
-                cursor: "pointer",
-              }}
-              onMouseEnter={(event) => {
-                const overlay = event.currentTarget.querySelector(".ov");
-                const image = event.currentTarget.querySelector(".gi");
-
-                if (overlay) overlay.style.opacity = "1";
-                if (image) {
-                  image.style.transform = `scale(${(item.zoom || 1) * 1.05})`;
-                }
-              }}
-              onMouseLeave={(event) => {
-                const overlay = event.currentTarget.querySelector(".ov");
-                const image = event.currentTarget.querySelector(".gi");
-
-                if (overlay) overlay.style.opacity = "0";
-                if (image) {
-                  image.style.transform = `scale(${item.zoom || 1})`;
-                }
+                cursor: "default",
               }}
             >
               <img
-                className="gi"
                 src={item.img}
                 alt={item.label}
                 loading="lazy"
+                decoding="async"
+                draggable={false}
                 style={{
                   width: "100%",
                   height: "100%",
                   objectFit: "cover",
-                  objectPosition: item.objectPosition || "50% 50%",
+                  objectPosition: item.objectPosition || "50% 15%",
                   display: "block",
-                  transition: "transform 0.5s ease",
                   transform: `scale(${item.zoom || 1})`,
+                  pointerEvents: "none",
+                  userSelect: "none",
+                  WebkitUserDrag: "none",
                 }}
                 onError={(event) => {
                   event.currentTarget.parentElement.style.display = "none";
                 }}
               />
 
-              <div
-                className="ov"
+              <figcaption
                 style={{
                   position: "absolute",
-                  inset: 0,
-                  background:
-                    "linear-gradient(to top, rgba(27, 38, 50, 0.94) 0%, transparent 62%)",
-                  display: "flex",
-                  alignItems: "flex-end",
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
                   padding: "1rem",
+                  background:
+                    "linear-gradient(to top, rgba(27, 38, 50, 0.9), transparent)",
                   opacity: 0,
-                  transition: "opacity var(--transition-base)",
+                  pointerEvents: "none",
                 }}
               >
-                <div>
-                  <div
-                    style={{
-                      fontFamily: "var(--font-heading)",
-                      fontSize: "0.95rem",
-                      color: COLORS.text,
-                      marginBottom: "3px",
-                    }}
-                  >
-                    {item.label}
-                  </div>
-
-                  <Tag>{item.category}</Tag>
-                </div>
-              </div>
-            </div>
+                <span
+                  style={{
+                    fontFamily: "var(--font-heading)",
+                    fontSize: "0.95rem",
+                    color: COLORS.text,
+                  }}
+                >
+                  {item.label}
+                </span>
+              </figcaption>
+            </figure>
           ))}
         </div>
       )}
-    </section>
-  );
-}
+      <style>{`
+        .featured-work-grid {
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
 
-function ServicesPreview() {
-  const services = [
-    { icon: "💍", label: "Weddings" },
-    { icon: "👑", label: "Quinceañeras" },
-    { icon: "🎞️", label: "Portraits" },
-    { icon: "🎬", label: "Film Production" },
-    { icon: "🎵", label: "Music Artists" },
-    { icon: "📷", label: "Commercial" },
-  ];
+        @media (max-width: 1100px) {
+          .featured-work-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
+        }
 
-  return (
-    <section
-      style={{
-        background: COLORS.surfaceDark,
-        padding: "6rem var(--page-x)",
-        borderTop: `1px solid ${COLORS.borderDark}`,
-        borderBottom: `1px solid ${COLORS.borderDark}`,
-      }}
-    >
-      <Reveal>
-        <Tag>What I Do</Tag>
+        @media (max-width: 760px) {
+          .featured-work-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+        }
 
-        <h2
-          style={{
-            fontFamily: "var(--font-heading)",
-            fontWeight: 700,
-            fontSize: "clamp(2rem, 4vw, 3rem)",
-            color: COLORS.text,
-            margin: "0.5rem 0 3rem",
-          }}
-        >
-          Services
-        </h2>
-      </Reveal>
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
-          gap: "1px",
-          background: COLORS.borderDark,
-          marginBottom: "3rem",
-        }}
-      >
-        {services.map((service, index) => (
-          <Reveal key={service.label} delay={index * 0.05}>
-            <div
-              style={{
-                background: COLORS.surface,
-                padding: "1.75rem 1.5rem",
-                minHeight: "130px",
-              }}
-            >
-              <div style={{ fontSize: "1.4rem", marginBottom: "0.75rem" }}>
-                {service.icon}
-              </div>
-
-              <div
-                style={{
-                  fontFamily: "var(--font-heading)",
-                  fontWeight: 600,
-                  fontSize: "1rem",
-                  color: COLORS.text,
-                }}
-              >
-                {service.label}
-              </div>
-            </div>
-          </Reveal>
-        ))}
-      </div>
-
-      <div style={{ textAlign: "center" }}>
-        <Link to="/services" className="btn-secondary">
-          View All Services
-        </Link>
-      </div>
+        @media (max-width: 520px) {
+          .featured-work-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+      `}</style>
     </section>
   );
 }
@@ -659,7 +670,6 @@ export default function Home() {
     <div style={{ background: COLORS.bg }}>
       <Hero />
       <FeaturedWork />
-      <ServicesPreview />
       <BookCTA />
       <Testimonials />
       <Footer />

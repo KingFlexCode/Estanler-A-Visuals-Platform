@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
-import { supabase } from "../lib/supabase";
-import { COLORS, BASE, CATEGORY_LABELS } from "../lib/constants";
+import { useEffect, useMemo, useState } from "react";
 import Footer from "../components/Footer";
+import { BASE, CATEGORY_LABELS, COLORS } from "../lib/constants";
+import { supabase } from "../lib/supabase";
 
 const FILTERS = ["All", ...Object.values(CATEGORY_LABELS)];
 
@@ -11,14 +11,22 @@ function buildPublicUrl(path) {
 }
 
 function mapPortfolioImage(image) {
+  const gridPath =
+    image.display_path || image.original_path || image.thumbnail_path;
+
+  const lightboxPath =
+    image.original_path || image.display_path || image.thumbnail_path;
+
   return {
     id: image.id,
     category: image.category,
-    label: image.title || image.file_name,
-    img: buildPublicUrl(image.thumbnail_path || image.original_path),
-    fullImg: buildPublicUrl(image.original_path),
+    label: image.title || image.file_name || "Portfolio image",
+    img: buildPublicUrl(gridPath),
+    fullImg: buildPublicUrl(lightboxPath),
     aspect: image.aspect_ratio || "4 / 5",
-    objectPosition: `${image.object_position_x ?? 50}% ${image.object_position_y ?? 50}%`,
+    objectPosition: `${image.object_position_x ?? 50}% ${
+      image.object_position_y ?? 15
+    }%`,
     zoom: Number(image.zoom || 1),
   };
 }
@@ -30,7 +38,6 @@ function getCategoryCounts(items) {
   }, {});
 }
 
-// ─── Spinner ──────────────────────────────────────────────────────────
 function Spinner() {
   return (
     <div
@@ -56,58 +63,63 @@ function Spinner() {
   );
 }
 
-// ─── Category nav pills ───────────────────────────────────────────────
 function CategoryNav({ active, onChange, counts }) {
   return (
     <div
       style={{
         display: "flex",
-        gap: "0",
+        gap: 0,
         overflowX: "auto",
         borderBottom: `1px solid ${COLORS.border}`,
         scrollbarWidth: "none",
         msOverflowStyle: "none",
       }}
     >
-      {FILTERS.map((f) => {
-        const isActive = active === f;
+      {FILTERS.map((filter) => {
+        const isActive = active === filter;
         const categoryKey = Object.keys(CATEGORY_LABELS).find(
-          (key) => CATEGORY_LABELS[key] === f,
+          (key) => CATEGORY_LABELS[key] === filter,
         );
+
         const count =
-          f === "All"
-            ? Object.values(counts).reduce((a, b) => a + b, 0)
+          filter === "All"
+            ? Object.values(counts).reduce((total, value) => total + value, 0)
             : counts[categoryKey] || 0;
+
         return (
           <button
-            key={f}
-            onClick={() => onChange(f)}
+            key={filter}
+            type="button"
+            onClick={() => onChange(filter)}
             style={{
-              fontFamily: "'Inter', sans-serif",
-              fontWeight: isActive ? 500 : 300,
-              fontSize: "12px",
-              letterSpacing: "0.08em",
+              fontFamily: "var(--font-body)",
+              fontWeight: isActive ? 700 : 500,
+              fontSize: 12,
+              letterSpacing: "0.12em",
               color: isActive ? COLORS.text : COLORS.muted,
-              background: "none",
+              background: isActive ? COLORS.surfaceDark : "transparent",
               border: "none",
+              borderLeft: isActive ? `1px solid ${COLORS.gold}` : "none",
+              borderRight: isActive ? `1px solid ${COLORS.gold}` : "none",
               borderBottom: isActive
                 ? `2px solid ${COLORS.gold}`
                 : "2px solid transparent",
               padding: "1rem 1.25rem 0.875rem",
               cursor: "pointer",
               whiteSpace: "nowrap",
-              transition: "all 0.2s",
+              transition: "all 0.2s ease",
               marginBottom: "-1px",
+              textTransform: "uppercase",
             }}
           >
-            {f}
+            {filter}
             {count > 0 && (
               <span
                 style={{
-                  marginLeft: "6px",
-                  fontSize: "10px",
+                  marginLeft: 6,
+                  fontSize: 10,
                   color: isActive ? COLORS.gold : COLORS.muted,
-                  opacity: 0.7,
+                  opacity: 0.85,
                 }}
               >
                 ({count})
@@ -116,147 +128,24 @@ function CategoryNav({ active, onChange, counts }) {
           </button>
         );
       })}
+
       <style>{`::-webkit-scrollbar { display: none; }`}</style>
     </div>
   );
 }
 
-// ─── Collage grid ─────────────────────────────────────────────────────
-// Alternates between different layout patterns for visual variety
-function CollageGrid({ items, onSelect }) {
+function MasonryGrid({ items, onSelect }) {
   if (items.length === 0) return null;
-
-  const groups = chunkItems(items);
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-      {groups.map((group, gi) => (
-        <CollageRow
-          key={gi}
-          items={group}
-          onSelect={onSelect}
-          startIndex={groups.slice(0, gi).reduce((a, g) => a + g.length, 0)}
-        />
-      ))}
-    </div>
-  );
-}
-
-// Split items into groups of varying sizes for collage effect
-function chunkItems(items) {
-  const groups = [];
-  let i = 0;
-  let rowIndex = 0;
-  while (i < items.length) {
-    const pattern = rowIndex % 4;
-    let size;
-    if (pattern === 0)
-      size = Math.min(3, items.length - i); // 3 equal
-    else if (pattern === 1)
-      size = Math.min(2, items.length - i); // 2 - one tall one wide
-    else if (pattern === 2)
-      size = Math.min(4, items.length - i); // 4 small
-    else size = Math.min(2, items.length - i); // 2 equal
-    groups.push(items.slice(i, i + size));
-    i += size;
-    rowIndex++;
-  }
-  return groups;
-}
-
-function CollageRow({ items, onSelect, startIndex }) {
-  const count = items.length;
-
-  if (count === 1) {
-    return (
-      <div style={{ height: "clamp(280px, 45vw, 560px)" }}>
-        <PhotoTile item={items[0]} index={startIndex} onSelect={onSelect} />
-      </div>
-    );
-  }
-
-  if (count === 2) {
-    return (
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: "4px",
-          height: "clamp(220px, 35vw, 440px)",
-        }}
-      >
-        {items.map((item, i) => (
-          <PhotoTile
-            key={item.id}
-            item={item}
-            index={startIndex + i}
-            onSelect={onSelect}
-          />
-        ))}
-      </div>
-    );
-  }
-
-  if (count === 3) {
-    return (
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "2fr 1fr 1fr",
-          gap: "4px",
-          height: "clamp(200px, 32vw, 400px)",
-        }}
-      >
-        {items.map((item, i) => (
-          <PhotoTile
-            key={item.id}
-            item={item}
-            index={startIndex + i}
-            onSelect={onSelect}
-          />
-        ))}
-      </div>
-    );
-  }
-
-  if (count === 4) {
-    return (
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr 1fr 1fr",
-          gap: "4px",
-          height: "clamp(180px, 28vw, 340px)",
-        }}
-      >
-        {items.map((item, i) => (
-          <PhotoTile
-            key={item.id}
-            item={item}
-            index={startIndex + i}
-            onSelect={onSelect}
-          />
-        ))}
-      </div>
-    );
-  }
 
   return (
     <div
       style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(3, 1fr)",
-        gap: "4px",
-        height: "clamp(180px, 28vw, 340px)",
+        columns: "4 280px",
+        columnGap: 6,
       }}
     >
-      {items.map((item, i) => (
-        <PhotoTile
-          key={item.id}
-          item={item}
-          index={startIndex + i}
-          onSelect={onSelect}
-        />
+      {items.map((item) => (
+        <PhotoTile key={item.id} item={item} onSelect={onSelect} />
       ))}
     </div>
   );
@@ -264,58 +153,89 @@ function CollageRow({ items, onSelect, startIndex }) {
 
 function PhotoTile({ item, onSelect }) {
   const [hovered, setHovered] = useState(false);
-  const baseZoom = item.zoom || 1;
 
   return (
-    <div
+    <button
+      type="button"
+      aria-label={`Open ${item.label || "portfolio image"}`}
       onClick={() => onSelect(item)}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
         position: "relative",
-        overflow: "hidden",
-        cursor: "pointer",
+        display: "block",
+        width: "100%",
+        breakInside: "avoid",
+        margin: "0 0 6px",
+        padding: 0,
+        border: "none",
         background: COLORS.surface,
-        height: "100%",
+        cursor: "pointer",
+        overflow: "hidden",
+        textAlign: "left",
+        transform: hovered ? "translateY(-4px) scale(1.012)" : "none",
+        boxShadow: hovered ? "0 18px 40px rgba(0, 0, 0, 0.28)" : "none",
+        zIndex: hovered ? 2 : 1,
+        transition:
+          "transform 0.28s ease, box-shadow 0.28s ease, filter 0.28s ease",
       }}
     >
       <img
         src={item.img}
         alt={item.label}
         loading="lazy"
+        decoding="async"
         style={{
           width: "100%",
-          height: "100%",
-          objectFit: "cover",
-          objectPosition: item.objectPosition || "50% 50%",
+          height: "auto",
           display: "block",
-          transform: hovered
-            ? `scale(${baseZoom * 1.04})`
-            : `scale(${baseZoom})`,
-          transition: "transform 0.5s ease",
+          filter: hovered ? "brightness(1.06) contrast(1.03)" : "none",
+          transition: "filter 0.28s ease",
         }}
-        onError={(e) => {
-          e.currentTarget.parentElement.style.display = "none";
+        onError={(event) => {
+          event.currentTarget.parentElement.style.display = "none";
         }}
       />
-    </div>
+
+      <span
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          inset: 0,
+          border: hovered
+            ? `1px solid ${COLORS.gold}`
+            : "1px solid transparent",
+          boxShadow: hovered
+            ? "inset 0 0 0 1px rgba(255, 255, 255, 0.08)"
+            : "none",
+          opacity: hovered ? 0.9 : 0,
+          transition: "opacity 0.28s ease, border-color 0.28s ease",
+          pointerEvents: "none",
+        }}
+      />
+    </button>
   );
 }
 
-// ─── Lightbox ─────────────────────────────────────────────────────────
 function Lightbox({ item, items, onClose, onNav }) {
-  const idx = items.findIndex((i) => i.id === item.id);
+  const index = items.findIndex((photo) => photo.id === item.id);
 
   useEffect(() => {
-    const handler = (e) => {
-      if (e.key === "Escape") onClose();
-      if (e.key === "ArrowRight" && idx < items.length - 1)
-        onNav(items[idx + 1]);
-      if (e.key === "ArrowLeft" && idx > 0) onNav(items[idx - 1]);
+    const handler = (event) => {
+      if (event.key === "Escape") onClose();
+
+      if (event.key === "ArrowRight" && index < items.length - 1) {
+        onNav(items[index + 1]);
+      }
+
+      if (event.key === "ArrowLeft" && index > 0) {
+        onNav(items[index - 1]);
+      }
     };
+
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [idx, items, onClose, onNav]);
+  }, [index, items, onClose, onNav]);
 
   return (
     <div
@@ -328,44 +248,45 @@ function Lightbox({ item, items, onClose, onNav }) {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
+        padding: "2rem",
       }}
     >
-      {/* Close */}
       <button
+        type="button"
         onClick={onClose}
         style={{
           position: "absolute",
           top: "1.5rem",
           right: "1.5rem",
-          background: "none",
-          border: "none",
-          color: "#fff",
-          fontSize: "1.4rem",
+          background: "rgba(0,0,0,0.25)",
+          border: `1px solid ${COLORS.border}`,
+          color: COLORS.text,
+          fontSize: "1.2rem",
           cursor: "pointer",
           zIndex: 201,
-          opacity: 0.7,
+          padding: "0.75rem 1rem",
         }}
       >
         ✕
       </button>
 
-      {/* Prev */}
-      {idx > 0 && (
+      {index > 0 && (
         <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onNav(items[idx - 1]);
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onNav(items[index - 1]);
           }}
           style={{
             position: "absolute",
             left: "1.5rem",
-            background: "none",
-            border: "none",
-            color: "#fff",
-            fontSize: "2.5rem",
+            background: "rgba(0,0,0,0.25)",
+            border: `1px solid ${COLORS.border}`,
+            color: COLORS.text,
+            fontSize: "2rem",
             cursor: "pointer",
             zIndex: 201,
-            opacity: 0.6,
+            padding: "0.75rem 1rem",
           }}
         >
           ‹
@@ -375,27 +296,32 @@ function Lightbox({ item, items, onClose, onNav }) {
       <img
         src={item.fullImg || item.img}
         alt={item.label}
-        onClick={(e) => e.stopPropagation()}
-        style={{ maxWidth: "90vw", maxHeight: "88vh", objectFit: "contain" }}
+        onClick={(event) => event.stopPropagation()}
+        style={{
+          maxWidth: "92vw",
+          maxHeight: "88vh",
+          objectFit: "contain",
+          background: COLORS.bg,
+        }}
       />
 
-      {/* Next */}
-      {idx < items.length - 1 && (
+      {index < items.length - 1 && (
         <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onNav(items[idx + 1]);
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onNav(items[index + 1]);
           }}
           style={{
             position: "absolute",
             right: "1.5rem",
-            background: "none",
-            border: "none",
-            color: "#fff",
-            fontSize: "2.5rem",
+            background: "rgba(0,0,0,0.25)",
+            border: `1px solid ${COLORS.border}`,
+            color: COLORS.text,
+            fontSize: "2rem",
             cursor: "pointer",
             zIndex: 201,
-            opacity: 0.6,
+            padding: "0.75rem 1rem",
           }}
         >
           ›
@@ -405,7 +331,6 @@ function Lightbox({ item, items, onClose, onNav }) {
   );
 }
 
-// ─── Main Work page ───────────────────────────────────────────────────
 export default function Work() {
   const [allItems, setAllItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -421,6 +346,7 @@ export default function Work() {
         .from("portfolio_images")
         .select("*")
         .eq("is_visible", true)
+        .neq("category", "unlisted")
         .order("display_order", { ascending: true })
         .order("created_at", { ascending: false });
 
@@ -432,22 +358,25 @@ export default function Work() {
         return;
       }
 
-      const results = (data || []).map(mapPortfolioImage);
+      const results = (data || [])
+        .map(mapPortfolioImage)
+        .filter((item) => item.img);
       setAllItems(results);
       setCounts(getCategoryCounts(results));
       setLoading(false);
     }
+
     fetchAll();
   }, []);
 
-  const filtered =
-    filter === "All"
-      ? allItems
-      : allItems.filter((w) => CATEGORY_LABELS[w.category] === filter);
+  const filtered = useMemo(() => {
+    if (filter === "All") return allItems;
+
+    return allItems.filter((item) => CATEGORY_LABELS[item.category] === filter);
+  }, [allItems, filter]);
 
   return (
     <div style={{ background: COLORS.bg, minHeight: "100vh" }}>
-      {/* Page header */}
       <div
         style={{
           paddingTop: "88px",
@@ -455,12 +384,10 @@ export default function Work() {
           background: COLORS.bg,
         }}
       >
-        {/* Category nav */}
         <CategoryNav active={filter} onChange={setFilter} counts={counts} />
       </div>
 
-      {/* Grid */}
-      <div style={{ padding: "4px" }}>
+      <div style={{ padding: 6 }}>
         {loading && <Spinner />}
 
         {!loading && filtered.length === 0 && (
@@ -468,7 +395,7 @@ export default function Work() {
             style={{
               textAlign: "center",
               padding: "6rem 2rem",
-              fontFamily: "'Inter', sans-serif",
+              fontFamily: "var(--font-body)",
               fontWeight: 300,
               fontSize: "0.9rem",
               color: COLORS.muted,
@@ -479,11 +406,10 @@ export default function Work() {
         )}
 
         {!loading && filtered.length > 0 && (
-          <CollageGrid items={filtered} onSelect={setLightbox} />
+          <MasonryGrid items={filtered} onSelect={setLightbox} />
         )}
       </div>
 
-      {/* Lightbox */}
       {lightbox && (
         <Lightbox
           item={lightbox}
