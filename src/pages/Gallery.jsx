@@ -152,6 +152,7 @@ export default function Gallery() {
   const [notice, setNotice] = useState("");
   const [lightbox, setLightbox] = useState(null);
   const [hoveredPhotoId, setHoveredPhotoId] = useState(null);
+  const [slideshowPlaying, setSlideshowPlaying] = useState(false);
 
   const { favorites, toggleFavorite } = useLocalFavorites(gallery?.id);
 
@@ -224,10 +225,16 @@ export default function Gallery() {
   }, [notice]);
 
   useEffect(() => {
-    if (!lightbox) return undefined;
+    if (!lightbox) {
+      setSlideshowPlaying(false);
+      return undefined;
+    }
 
     const handleKeyDown = (event) => {
-      if (event.key === "Escape") setLightbox(null);
+      if (event.key === "Escape") {
+        setLightbox(null);
+        setSlideshowPlaying(false);
+      }
       if (event.key === "ArrowRight" && lightboxIndex < orderedPhotos.length - 1) {
         setLightbox(orderedPhotos[lightboxIndex + 1]);
       }
@@ -239,6 +246,15 @@ export default function Gallery() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [lightbox, lightboxIndex, orderedPhotos]);
+
+  useEffect(() => {
+    if (!slideshowPlaying || !lightbox || orderedPhotos.length < 2) return undefined;
+    const timer = window.setTimeout(() => {
+      const nextIndex = lightboxIndex >= orderedPhotos.length - 1 ? 0 : lightboxIndex + 1;
+      setLightbox(orderedPhotos[nextIndex]);
+    }, 3500);
+    return () => window.clearTimeout(timer);
+  }, [lightbox, lightboxIndex, orderedPhotos, slideshowPlaying]);
 
   const scrollToPhotos = () => {
     document.getElementById("gallery-sections")?.scrollIntoView({ behavior: "smooth" });
@@ -296,11 +312,40 @@ export default function Gallery() {
     link.remove();
   };
 
+  const downloadAllPhotos = async () => {
+    if (!orderedPhotos.length) return;
+    setNotice(`Starting ${orderedPhotos.length} photo download${orderedPhotos.length === 1 ? "" : "s"}.`);
+    for (const photo of orderedPhotos) {
+      downloadPhoto(photo);
+      await new Promise((resolve) => window.setTimeout(resolve, 130));
+    }
+  };
+
+  const startSlideshow = () => {
+    if (!orderedPhotos.length) {
+      setNotice("No photos available for slideshow yet.");
+      return;
+    }
+    setLightbox(orderedPhotos[0]);
+    setSlideshowPlaying(true);
+  };
+
   const goLightbox = (direction) => {
     const nextIndex = lightboxIndex + direction;
     if (nextIndex >= 0 && nextIndex < orderedPhotos.length) {
       setLightbox(orderedPhotos[nextIndex]);
     }
+  };
+
+  const iconButtonStyle = {
+    background: "transparent",
+    border: "none",
+    color: "#555",
+    cursor: "pointer",
+    fontFamily: shellFont,
+    fontSize: 24,
+    lineHeight: 1,
+    padding: "0.55rem 0.65rem",
   };
 
   if (state === "loading") {
@@ -436,7 +481,7 @@ export default function Gallery() {
   );
 
   const renderHero = () => {
-    const heroHeight = "min(92vh, 860px)";
+    const heroHeight = "100vh";
     const compactTitle = {
       titleSize: "clamp(2rem, 4.4vw, 3.7rem)",
       maxWidth: 520,
@@ -460,7 +505,7 @@ export default function Gallery() {
           <div style={{ display: "grid", placeItems: "center", padding: "clamp(2rem, 5vw, 5rem)" }}>
             <div>{titleBlock("left", "#111", compactTitle)}{viewButton("dark")}</div>
           </div>
-          <div style={{ ...coverBackground, minHeight: 420 }} />
+          <div style={{ ...coverBackground, minHeight: heroHeight }} />
         </section>
       );
     }
@@ -476,7 +521,7 @@ export default function Gallery() {
             gridTemplateColumns: "minmax(0, 62%) minmax(280px, 38%)",
           }}
         >
-          <div style={{ ...coverBackground, minHeight: 420 }} />
+          <div style={{ ...coverBackground, minHeight: heroHeight }} />
           <div style={{ display: "grid", placeItems: "center", padding: "clamp(2rem, 4vw, 4rem)" }}>
             <div>{titleBlock("left", "#111", compactTitle)}{viewButton("dark")}</div>
           </div>
@@ -525,7 +570,7 @@ export default function Gallery() {
             gridTemplateColumns: "minmax(0, 1fr) minmax(280px, 1fr)",
           }}
         >
-          <div style={{ ...coverBackground, minHeight: 420 }} />
+          <div style={{ ...coverBackground, minHeight: heroHeight }} />
           <div style={{ display: "grid", placeItems: "center", padding: "clamp(2rem, 5vw, 5rem)" }}>
             <div>{titleBlock("left", "#fff", compactTitle)}{viewButton()}</div>
           </div>
@@ -545,7 +590,7 @@ export default function Gallery() {
             gridTemplateRows: "minmax(360px, 1fr) auto",
           }}
         >
-          <div style={{ ...coverBackground, minHeight: 360 }} />
+          <div style={{ ...coverBackground, minHeight: "calc(100vh - 128px)" }} />
           <div
             style={{
               display: "grid",
@@ -634,6 +679,7 @@ export default function Gallery() {
   const PhotoCard = ({ photo, mode = "masonry", index = 0 }) => {
     const thumbnailUrl = getPhotoUrl(photo, "thumbnail");
     const displayUrl = getPhotoUrl(photo, "display");
+    const imageUrl = displayUrl || thumbnailUrl;
     const isFavorite = favorites.has(photo.id);
     const hovered = hoveredPhotoId === photo.id;
     const isSquare = mode === "square";
@@ -656,13 +702,13 @@ export default function Gallery() {
         }}
       >
         <img
-          src={thumbnailUrl || displayUrl}
+          src={imageUrl}
           alt={photo.alt_text || photo.title || photo.file_name || "Gallery photo"}
           loading="lazy"
           onClick={() => setLightbox(photo)}
           onError={(event) => {
-            if (displayUrl && event.currentTarget.src !== displayUrl) {
-              event.currentTarget.src = displayUrl;
+            if (thumbnailUrl && event.currentTarget.src !== thumbnailUrl) {
+              event.currentTarget.src = thumbnailUrl;
             }
           }}
           style={{
@@ -799,9 +845,9 @@ export default function Gallery() {
           background: "rgba(255,255,255,0.94)",
           borderBottom: "1px solid rgba(0,0,0,0.08)",
           backdropFilter: "blur(14px)",
-          display: "flex",
+          display: "grid",
+          gridTemplateColumns: "minmax(180px, 1fr) auto minmax(180px, 1fr)",
           alignItems: "center",
-          justifyContent: "space-between",
           gap: "1rem",
           padding: "0.9rem clamp(1rem, 4vw, 3rem)",
         }}
@@ -816,7 +862,7 @@ export default function Gallery() {
           </div>
         </div>
 
-        <nav style={{ display: "flex", gap: "0.4rem", overflowX: "auto", maxWidth: "42vw" }}>
+        <nav style={{ display: "flex", gap: "0.4rem", overflowX: "auto", justifyContent: "center", maxWidth: "44vw" }}>
           {orderedSections.map((section) => (
             <button
               key={section.id}
@@ -841,24 +887,23 @@ export default function Gallery() {
           ))}
         </nav>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4 }}>
           <button
             type="button"
-            onClick={shareGallery}
-            style={{
-              background: "#111",
-              border: "none",
-              color: "#fff",
-              cursor: "pointer",
-              fontFamily: shellFont,
-              fontSize: 11,
-              fontWeight: 800,
-              letterSpacing: "0.12em",
-              padding: "0.7rem 1rem",
-              textTransform: "uppercase",
-            }}
+            onClick={() => setNotice(favorites.size > 0 ? `${favorites.size} favorite${favorites.size === 1 ? "" : "s"} saved on this device.` : "Tap the heart on any photo to add favorites.")}
+            style={{ ...iconButtonStyle, color: favorites.size > 0 ? themeColor : "#555" }}
+            title="Favorites"
           >
-            Share
+            ♡
+          </button>
+          <button type="button" onClick={downloadAllPhotos} style={iconButtonStyle} title="Download all photos">
+            ⇩
+          </button>
+          <button type="button" onClick={shareGallery} style={iconButtonStyle} title="Share gallery">
+            ↗
+          </button>
+          <button type="button" onClick={startSlideshow} style={iconButtonStyle} title="Play slideshow">
+            ▶
           </button>
         </div>
       </header>
@@ -924,13 +969,13 @@ export default function Gallery() {
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", padding: "1rem clamp(1rem, 3vw, 2rem)" }}>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontFamily: shellFont, fontSize: 12, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.62)" }}>
-                {lightboxIndex + 1} / {orderedPhotos.length}
+                {lightboxIndex + 1} / {orderedPhotos.length}{slideshowPlaying ? " · Slideshow" : ""}
               </div>
               <div style={{ fontFamily: displayFont, fontSize: "1.2rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {lightbox.title || lightbox.file_name || gallery.title}
               </div>
             </div>
-            <button type="button" onClick={() => setLightbox(null)} style={{ background: "transparent", border: "none", color: "#fff", cursor: "pointer", fontSize: 26 }}>×</button>
+            <button type="button" onClick={() => { setLightbox(null); setSlideshowPlaying(false); }} style={{ background: "transparent", border: "none", color: "#fff", cursor: "pointer", fontSize: 26 }}>×</button>
           </div>
 
           <div style={{ position: "relative", display: "grid", placeItems: "center", minHeight: 0, padding: "0 4rem" }}>
@@ -956,6 +1001,9 @@ export default function Gallery() {
             </button>
             <button type="button" onClick={() => downloadPhoto(lightbox)} style={{ background: themeColor, border: "none", color: "#111", cursor: "pointer", fontFamily: shellFont, fontSize: 11, fontWeight: 900, letterSpacing: "0.12em", padding: "0.75rem 1rem", textTransform: "uppercase" }}>
               Download
+            </button>
+            <button type="button" onClick={() => setSlideshowPlaying((playing) => !playing)} style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.28)", color: "#fff", cursor: "pointer", fontFamily: shellFont, fontSize: 11, fontWeight: 800, letterSpacing: "0.12em", padding: "0.75rem 1rem", textTransform: "uppercase" }}>
+              {slideshowPlaying ? "Pause" : "Play"}
             </button>
           </div>
         </div>
