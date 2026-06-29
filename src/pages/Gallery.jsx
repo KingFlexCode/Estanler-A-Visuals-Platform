@@ -6,9 +6,9 @@ import { supabase } from "../lib/supabase";
 
 const CLIENT_GALLERY_BUCKET = "client-galleries";
 const BRAND_NAME = "Estanler Aleman Photography";
-
 const shellFont = "'Inter', sans-serif";
 const displayFont = "'Playfair Display', Georgia, serif";
+const textEncoder = new TextEncoder();
 
 function getGalleryPhotoUrl(path) {
   if (!path) return "";
@@ -42,71 +42,147 @@ function getPhotoUrl(photo, preferred = "display") {
   return getGalleryPhotoUrl(path);
 }
 
+function sanitizeFileName(value = "file") {
+  return String(value)
+    .trim()
+    .replace(/[\\/:*?"<>|]+/g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "") || "file";
+}
+
 function getTypographyTheme(style = "classic") {
   const themes = {
-    classic: {
-      family: displayFont,
-      weight: 600,
-      spacing: "0.02em",
-      transform: "none",
-    },
-    modern: {
-      family: shellFont,
-      weight: 800,
-      spacing: "-0.03em",
-      transform: "none",
-    },
-    editorial: {
-      family: displayFont,
-      weight: 600,
-      spacing: "0.18em",
-      transform: "uppercase",
-    },
-    luxury: {
-      family: "Didot, 'Bodoni 72', 'Playfair Display', Georgia, serif",
-      weight: 500,
-      spacing: "0.01em",
-      transform: "none",
-    },
-    romantic: {
-      family: "'Snell Roundhand', 'Brush Script MT', cursive",
-      weight: 500,
-      spacing: "0.01em",
-      transform: "none",
-    },
-    fashion: {
-      family: "Impact, 'Arial Black', sans-serif",
-      weight: 800,
-      spacing: "0.04em",
-      transform: "uppercase",
-    },
-    cinematic: {
-      family: shellFont,
-      weight: 700,
-      spacing: "0.2em",
-      transform: "uppercase",
-    },
-    minimal: {
-      family: "Helvetica, Arial, sans-serif",
-      weight: 300,
-      spacing: "0.08em",
-      transform: "uppercase",
-    },
-    playful: {
-      family: "'Trebuchet MS', Arial, sans-serif",
-      weight: 800,
-      spacing: "0.01em",
-      transform: "none",
-    },
-    street: {
-      family: "'Arial Black', Impact, sans-serif",
-      weight: 900,
-      spacing: "-0.02em",
-      transform: "uppercase",
-    },
+    classic: { family: displayFont, weight: 600, spacing: "0.02em", transform: "none" },
+    modern: { family: shellFont, weight: 800, spacing: "-0.03em", transform: "none" },
+    editorial: { family: displayFont, weight: 600, spacing: "0.18em", transform: "uppercase" },
+    luxury: { family: "Didot, 'Bodoni 72', 'Playfair Display', Georgia, serif", weight: 500, spacing: "0.01em", transform: "none" },
+    romantic: { family: "'Snell Roundhand', 'Brush Script MT', cursive", weight: 500, spacing: "0.01em", transform: "none" },
+    fashion: { family: "Impact, 'Arial Black', sans-serif", weight: 800, spacing: "0.04em", transform: "uppercase" },
+    cinematic: { family: shellFont, weight: 700, spacing: "0.2em", transform: "uppercase" },
+    minimal: { family: "Helvetica, Arial, sans-serif", weight: 300, spacing: "0.08em", transform: "uppercase" },
+    playful: { family: "'Trebuchet MS', Arial, sans-serif", weight: 800, spacing: "0.01em", transform: "none" },
+    street: { family: "'Arial Black', Impact, sans-serif", weight: 900, spacing: "-0.02em", transform: "uppercase" },
   };
 
   return themes[style] || themes.classic;
+}
+
+const crcTable = (() => {
+  const table = new Uint32Array(256);
+  for (let i = 0; i < 256; i += 1) {
+    let value = i;
+    for (let j = 0; j < 8; j += 1) {
+      value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+    }
+    table[i] = value >>> 0;
+  }
+  return table;
+})();
+
+function crc32(bytes) {
+  let value = 0xffffffff;
+  for (let i = 0; i < bytes.length; i += 1) {
+    value = crcTable[(value ^ bytes[i]) & 0xff] ^ (value >>> 8);
+  }
+  return (value ^ 0xffffffff) >>> 0;
+}
+
+function uint16(value) {
+  return new Uint8Array([value & 0xff, (value >>> 8) & 0xff]);
+}
+
+function uint32(value) {
+  return new Uint8Array([
+    value & 0xff,
+    (value >>> 8) & 0xff,
+    (value >>> 16) & 0xff,
+    (value >>> 24) & 0xff,
+  ]);
+}
+
+function concatUint8(parts) {
+  const total = parts.reduce((sum, part) => sum + part.length, 0);
+  const output = new Uint8Array(total);
+  let offset = 0;
+  for (const part of parts) {
+    output.set(part, offset);
+    offset += part.length;
+  }
+  return output;
+}
+
+function createZipBlob(entries) {
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+
+  entries.forEach((entry) => {
+    const fileNameBytes = textEncoder.encode(entry.name);
+    const checksum = crc32(entry.bytes);
+    const size = entry.bytes.length;
+
+    if (size >= 0xffffffff || offset >= 0xffffffff) {
+      throw new Error("Gallery ZIP is too large for browser packaging.");
+    }
+
+    const localHeader = concatUint8([
+      uint32(0x04034b50),
+      uint16(20),
+      uint16(0x0800),
+      uint16(0),
+      uint16(0),
+      uint16(0),
+      uint32(checksum),
+      uint32(size),
+      uint32(size),
+      uint16(fileNameBytes.length),
+      uint16(0),
+      fileNameBytes,
+    ]);
+
+    localParts.push(localHeader, entry.bytes);
+
+    const centralHeader = concatUint8([
+      uint32(0x02014b50),
+      uint16(20),
+      uint16(20),
+      uint16(0x0800),
+      uint16(0),
+      uint16(0),
+      uint16(0),
+      uint32(checksum),
+      uint32(size),
+      uint32(size),
+      uint16(fileNameBytes.length),
+      uint16(0),
+      uint16(0),
+      uint16(0),
+      uint16(0),
+      uint32(0),
+      uint32(offset),
+      fileNameBytes,
+    ]);
+
+    centralParts.push(centralHeader);
+    offset += localHeader.length + size;
+  });
+
+  const centralDirectory = concatUint8(centralParts);
+  const endRecord = concatUint8([
+    uint32(0x06054b50),
+    uint16(0),
+    uint16(0),
+    uint16(entries.length),
+    uint16(entries.length),
+    uint32(centralDirectory.length),
+    uint32(offset),
+    uint16(0),
+  ]);
+
+  return new Blob([concatUint8([...localParts, centralDirectory, endRecord])], {
+    type: "application/zip",
+  });
 }
 
 function useLocalFavorites(galleryId) {
@@ -153,21 +229,24 @@ export default function Gallery() {
   const [lightbox, setLightbox] = useState(null);
   const [hoveredPhotoId, setHoveredPhotoId] = useState(null);
   const [slideshowPlaying, setSlideshowPlaying] = useState(false);
+  const [zipBusy, setZipBusy] = useState(false);
 
   const { favorites, toggleFavorite } = useLocalFavorites(gallery?.id);
 
   const orderedSections = useMemo(() => sortByOrder(sections), [sections]);
   const orderedPhotos = useMemo(() => sortByOrder(photos), [photos]);
+  const visibleSectionIds = useMemo(() => new Set(orderedSections.map((section) => section.id)), [orderedSections]);
+  const publicPhotos = useMemo(
+    () => orderedPhotos.filter((photo) => !photo.section_id || visibleSectionIds.has(photo.section_id)),
+    [orderedPhotos, visibleSectionIds],
+  );
   const coverPhoto = useMemo(
-    () =>
-      orderedPhotos.find((photo) => photo.id === gallery?.cover_image_id) ||
-      orderedPhotos[0] ||
-      null,
-    [gallery?.cover_image_id, orderedPhotos],
+    () => publicPhotos.find((photo) => photo.id === gallery?.cover_image_id) || publicPhotos[0] || null,
+    [gallery?.cover_image_id, publicPhotos],
   );
   const lightboxIndex = useMemo(
-    () => (lightbox ? orderedPhotos.findIndex((photo) => photo.id === lightbox.id) : -1),
-    [lightbox, orderedPhotos],
+    () => (lightbox ? publicPhotos.findIndex((photo) => photo.id === lightbox.id) : -1),
+    [lightbox, publicPhotos],
   );
 
   const loadGallery = useCallback(async () => {
@@ -219,10 +298,10 @@ export default function Gallery() {
   }, [loadGallery]);
 
   useEffect(() => {
-    if (!notice) return undefined;
+    if (!notice || zipBusy) return undefined;
     const timer = window.setTimeout(() => setNotice(""), 4200);
     return () => window.clearTimeout(timer);
-  }, [notice]);
+  }, [notice, zipBusy]);
 
   useEffect(() => {
     if (!lightbox) {
@@ -235,35 +314,35 @@ export default function Gallery() {
         setLightbox(null);
         setSlideshowPlaying(false);
       }
-      if (event.key === "ArrowRight" && lightboxIndex < orderedPhotos.length - 1) {
-        setLightbox(orderedPhotos[lightboxIndex + 1]);
+      if (event.key === "ArrowRight" && lightboxIndex < publicPhotos.length - 1) {
+        setLightbox(publicPhotos[lightboxIndex + 1]);
       }
       if (event.key === "ArrowLeft" && lightboxIndex > 0) {
-        setLightbox(orderedPhotos[lightboxIndex - 1]);
+        setLightbox(publicPhotos[lightboxIndex - 1]);
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [lightbox, lightboxIndex, orderedPhotos]);
+  }, [lightbox, lightboxIndex, publicPhotos]);
 
   useEffect(() => {
-    if (!slideshowPlaying || !lightbox || orderedPhotos.length < 2) return undefined;
+    if (!slideshowPlaying || !lightbox || publicPhotos.length < 2) return undefined;
     const timer = window.setTimeout(() => {
-      const nextIndex = lightboxIndex >= orderedPhotos.length - 1 ? 0 : lightboxIndex + 1;
-      setLightbox(orderedPhotos[nextIndex]);
+      const nextIndex = lightboxIndex >= publicPhotos.length - 1 ? 0 : lightboxIndex + 1;
+      setLightbox(publicPhotos[nextIndex]);
     }, 3500);
     return () => window.clearTimeout(timer);
-  }, [lightbox, lightboxIndex, orderedPhotos, slideshowPlaying]);
+  }, [lightbox, lightboxIndex, publicPhotos, slideshowPlaying]);
+
+  const sectionPhotos = useCallback(
+    (sectionId) => publicPhotos.filter((photo) => photo.section_id === sectionId),
+    [publicPhotos],
+  );
 
   const scrollToPhotos = () => {
     document.getElementById("gallery-sections")?.scrollIntoView({ behavior: "smooth" });
   };
-
-  const sectionPhotos = useCallback(
-    (sectionId) => orderedPhotos.filter((photo) => photo.section_id === sectionId),
-    [orderedPhotos],
-  );
 
   const copyText = async (text, message) => {
     try {
@@ -300,6 +379,17 @@ export default function Gallery() {
     copyText(url, "Photo link copied.");
   };
 
+  const saveBlob = (blob, fileName) => {
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+  };
+
   const downloadPhoto = async (photo) => {
     const url = getPhotoUrl(photo, "original");
     if (!url) return;
@@ -307,47 +397,66 @@ export default function Gallery() {
     try {
       const response = await fetch(url);
       if (!response.ok) throw new Error("Download failed.");
-
       const blob = await response.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = objectUrl;
-      link.download = photo.file_name || "gallery-photo.jpg";
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      saveBlob(blob, photo.file_name || "gallery-photo.jpg");
     } catch {
       setNotice("Download could not start. Please try again.");
     }
   };
 
-  const downloadAllPhotos = async () => {
-    if (!orderedPhotos.length) return;
-    setNotice(`Starting ${orderedPhotos.length} photo download${orderedPhotos.length === 1 ? "" : "s"}.`);
-    for (const photo of orderedPhotos) {
-      await downloadPhoto(photo);
-      await new Promise((resolve) => window.setTimeout(resolve, 130));
+  const downloadGalleryZip = async () => {
+    if (zipBusy) return;
+    if (!publicPhotos.length) {
+      setNotice("No photos available to package yet.");
+      return;
+    }
+
+    const folderName = sanitizeFileName(gallery?.slug || gallery?.title || slug || "gallery");
+    const entries = [];
+    setZipBusy(true);
+
+    try {
+      for (let index = 0; index < publicPhotos.length; index += 1) {
+        const photo = publicPhotos[index];
+        const url = getPhotoUrl(photo, "original");
+        if (!url) continue;
+
+        setNotice(`Preparing ZIP ${index + 1}/${publicPhotos.length}...`);
+        const response = await fetch(url);
+        if (!response.ok) throw new Error("Photo could not be fetched.");
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        const cleanName = sanitizeFileName(photo.file_name || `photo-${index + 1}.jpg`);
+        entries.push({ name: `${folderName}/${String(index + 1).padStart(3, "0")}-${cleanName}`, bytes });
+      }
+
+      setNotice("Packaging ZIP file...");
+      const zipBlob = createZipBlob(entries);
+      saveBlob(zipBlob, `${folderName}.zip`);
+      setNotice("Gallery ZIP download started.");
+    } catch {
+      setNotice("ZIP download could not be prepared. Try downloading individual photos for now.");
+    } finally {
+      setZipBusy(false);
     }
   };
 
   const startSlideshow = () => {
-    if (!orderedPhotos.length) {
+    if (!publicPhotos.length) {
       setNotice("No photos available for slideshow yet.");
       return;
     }
-    setLightbox(orderedPhotos[0]);
+    setLightbox(publicPhotos[0]);
     setSlideshowPlaying(true);
   };
 
   const goLightbox = (direction) => {
     const nextIndex = lightboxIndex + direction;
-    if (nextIndex >= 0 && nextIndex < orderedPhotos.length) {
-      setLightbox(orderedPhotos[nextIndex]);
+    if (nextIndex >= 0 && nextIndex < publicPhotos.length) {
+      setLightbox(publicPhotos[nextIndex]);
     }
   };
 
-  const iconButtonStyle = {
+  const actionIconStyle = {
     background: "transparent",
     border: "none",
     color: "#555",
@@ -359,8 +468,8 @@ export default function Gallery() {
   };
 
   const photoActionButtonStyle = {
-    background: "rgba(255,255,255,0.1)",
-    border: "1px solid rgba(255,255,255,0.18)",
+    background: "rgba(0,0,0,0.16)",
+    border: "1px solid rgba(255,255,255,0.2)",
     color: "#fff",
     cursor: "pointer",
     display: "grid",
@@ -373,14 +482,7 @@ export default function Gallery() {
 
   if (state === "loading") {
     return (
-      <div
-        style={{
-          minHeight: "100vh",
-          background: COLORS.bg,
-          display: "grid",
-          placeItems: "center",
-        }}
-      >
+      <div style={{ minHeight: "100vh", background: COLORS.bg, display: "grid", placeItems: "center" }}>
         <Spinner />
       </div>
     );
@@ -423,10 +525,7 @@ export default function Gallery() {
     backgroundSize: "cover",
     backgroundRepeat: "no-repeat",
   };
-  const visiblePhotoCount = orderedSections.reduce(
-    (total, section) => total + sectionPhotos(section.id).length,
-    0,
-  );
+  const visiblePhotoCount = orderedSections.reduce((total, section) => total + sectionPhotos(section.id).length, 0);
 
   const titleBlock = (align = "center", color = "#fff", options = {}) => (
     <div
@@ -505,14 +604,10 @@ export default function Gallery() {
 
   const renderHero = () => {
     const heroHeight = "100vh";
-    const compactTitle = {
-      titleSize: "clamp(2rem, 4.4vw, 3.7rem)",
-      maxWidth: 520,
-      dateSize: 11,
-      clientSize: 12,
-    };
+    const compactTitle = { titleSize: "clamp(2rem, 4.4vw, 3.7rem)", maxWidth: 520, dateSize: 11, clientSize: 12 };
 
-    if (coverStyle === "novel") {
+    if (coverStyle === "novel" || coverStyle === "journal") {
+      const imageFirst = coverStyle === "journal";
       return (
         <section
           style={{
@@ -520,61 +615,23 @@ export default function Gallery() {
             background: "#fff",
             color: "#111",
             display: "grid",
-            gridTemplateColumns: "minmax(280px, 42%) minmax(0, 58%)",
-            border: "clamp(14px, 2vw, 28px) solid #fff",
+            gridTemplateColumns: imageFirst ? "minmax(0, 62%) minmax(280px, 38%)" : "minmax(280px, 42%) minmax(0, 58%)",
+            border: coverStyle === "novel" ? "clamp(14px, 2vw, 28px) solid #fff" : "none",
             boxSizing: "border-box",
           }}
         >
-          <div style={{ display: "grid", placeItems: "center", padding: "clamp(2rem, 5vw, 5rem)" }}>
-            <div>{titleBlock("left", "#111", compactTitle)}{viewButton("dark")}</div>
-          </div>
+          {!imageFirst && <div style={{ display: "grid", placeItems: "center", padding: "clamp(2rem, 5vw, 5rem)" }}><div>{titleBlock("left", "#111", compactTitle)}{viewButton("dark")}</div></div>}
           <div style={{ ...coverBackground, minHeight: heroHeight }} />
-        </section>
-      );
-    }
-
-    if (coverStyle === "journal") {
-      return (
-        <section
-          style={{
-            minHeight: heroHeight,
-            background: "#fff",
-            color: "#111",
-            display: "grid",
-            gridTemplateColumns: "minmax(0, 62%) minmax(280px, 38%)",
-          }}
-        >
-          <div style={{ ...coverBackground, minHeight: heroHeight }} />
-          <div style={{ display: "grid", placeItems: "center", padding: "clamp(2rem, 4vw, 4rem)" }}>
-            <div>{titleBlock("left", "#111", compactTitle)}{viewButton("dark")}</div>
-          </div>
+          {imageFirst && <div style={{ display: "grid", placeItems: "center", padding: "clamp(2rem, 4vw, 4rem)" }}><div>{titleBlock("left", "#111", compactTitle)}{viewButton("dark")}</div></div>}
         </section>
       );
     }
 
     if (coverStyle === "minimal") {
       return (
-        <section
-          style={{
-            minHeight: heroHeight,
-            background: "#fff",
-            color: "#111",
-            display: "grid",
-            placeItems: "center",
-            padding: "clamp(2rem, 5vw, 5rem)",
-            boxSizing: "border-box",
-            textAlign: "center",
-          }}
-        >
+        <section style={{ minHeight: heroHeight, background: "#fff", color: "#111", display: "grid", placeItems: "center", padding: "clamp(2rem, 5vw, 5rem)", boxSizing: "border-box", textAlign: "center" }}>
           <div style={{ width: "min(760px, 100%)" }}>
-            <div
-              style={{
-                ...coverBackground,
-                width: "min(300px, 64vw)",
-                aspectRatio: "1 / 1",
-                margin: "0 auto 2rem",
-              }}
-            />
+            <div style={{ ...coverBackground, width: "min(300px, 64vw)", aspectRatio: "1 / 1", margin: "0 auto 2rem" }} />
             {titleBlock("center", "#111", { titleSize: "clamp(2rem, 6vw, 4.25rem)" })}
             {viewButton("dark")}
           </div>
@@ -584,49 +641,19 @@ export default function Gallery() {
 
     if (coverStyle === "split") {
       return (
-        <section
-          style={{
-            minHeight: heroHeight,
-            background: "#101010",
-            color: "#fff",
-            display: "grid",
-            gridTemplateColumns: "minmax(0, 1fr) minmax(280px, 1fr)",
-          }}
-        >
+        <section style={{ minHeight: heroHeight, background: "#101010", color: "#fff", display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(280px, 1fr)" }}>
           <div style={{ ...coverBackground, minHeight: heroHeight }} />
-          <div style={{ display: "grid", placeItems: "center", padding: "clamp(2rem, 5vw, 5rem)" }}>
-            <div>{titleBlock("left", "#fff", compactTitle)}{viewButton()}</div>
-          </div>
+          <div style={{ display: "grid", placeItems: "center", padding: "clamp(2rem, 5vw, 5rem)" }}><div>{titleBlock("left", "#fff", compactTitle)}{viewButton()}</div></div>
         </section>
       );
     }
 
     if (coverStyle === "vintage") {
       return (
-        <section
-          style={{
-            minHeight: heroHeight,
-            background: "#252525",
-            padding: "clamp(1rem, 2.5vw, 2rem)",
-            boxSizing: "border-box",
-            display: "grid",
-            gridTemplateRows: "minmax(360px, 1fr) auto",
-          }}
-        >
+        <section style={{ minHeight: heroHeight, background: "#252525", padding: "clamp(1rem, 2.5vw, 2rem)", boxSizing: "border-box", display: "grid", gridTemplateRows: "minmax(360px, 1fr) auto" }}>
           <div style={{ ...coverBackground, minHeight: "calc(100vh - 128px)" }} />
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "minmax(140px, 1fr) minmax(0, auto) minmax(140px, 1fr)",
-              alignItems: "center",
-              gap: "1.5rem",
-              color: "#fff",
-              padding: "clamp(1.3rem, 3vw, 2rem) 0.5rem 0.35rem",
-            }}
-          >
-            <div style={{ fontFamily: shellFont, fontSize: 10, letterSpacing: "0.16em", textTransform: "uppercase", opacity: 0.78 }}>
-              {BRAND_NAME}
-            </div>
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(140px, 1fr) minmax(0, auto) minmax(140px, 1fr)", alignItems: "center", gap: "1.5rem", color: "#fff", padding: "clamp(1.3rem, 3vw, 2rem) 0.5rem 0.35rem" }}>
+            <div style={{ fontFamily: shellFont, fontSize: 10, letterSpacing: "0.16em", textTransform: "uppercase", opacity: 0.78 }}>{BRAND_NAME}</div>
             {titleBlock("center", "#fff", { titleSize: "clamp(1.8rem, 4vw, 3.45rem)", maxWidth: 720 })}
             <div style={{ textAlign: "right" }}>{viewButton()}</div>
           </div>
@@ -636,31 +663,9 @@ export default function Gallery() {
 
     if (coverStyle === "divider") {
       return (
-        <section
-          style={{
-            minHeight: heroHeight,
-            ...coverBackground,
-            display: "flex",
-            alignItems: "stretch",
-            justifyContent: "flex-start",
-          }}
-        >
-          <div
-            style={{
-              width: "min(520px, 46vw)",
-              minHeight: heroHeight,
-              background: "rgba(0,0,0,0.55)",
-              backdropFilter: "blur(1px)",
-              display: "grid",
-              placeItems: "center",
-              padding: "clamp(2rem, 5vw, 4rem)",
-              boxSizing: "border-box",
-            }}
-          >
-            <div style={{ textAlign: "center" }}>
-              {titleBlock("center", "#fff", { titleSize: "clamp(1.8rem, 4vw, 3.3rem)", maxWidth: 430 })}
-              {viewButton()}
-            </div>
+        <section style={{ minHeight: heroHeight, ...coverBackground, display: "flex", alignItems: "stretch", justifyContent: "flex-start" }}>
+          <div style={{ width: "min(520px, 46vw)", minHeight: heroHeight, background: "rgba(0,0,0,0.55)", backdropFilter: "blur(1px)", display: "grid", placeItems: "center", padding: "clamp(2rem, 5vw, 4rem)", boxSizing: "border-box" }}>
+            <div style={{ textAlign: "center" }}>{titleBlock("center", "#fff", { titleSize: "clamp(1.8rem, 4vw, 3.3rem)", maxWidth: 430 })}{viewButton()}</div>
           </div>
         </section>
       );
@@ -672,26 +677,12 @@ export default function Gallery() {
     const textAlign = coverStyle === "left" ? "left" : "center";
 
     return (
-      <section
-        style={{
-          minHeight: heroHeight,
-          ...coverBackground,
-          position: "relative",
-          display: "flex",
-          alignItems,
-          justifyContent,
-          padding: "clamp(2rem, 6vw, 6rem)",
-          boxSizing: "border-box",
-          overflow: "hidden",
-        }}
-      >
+      <section style={{ minHeight: heroHeight, ...coverBackground, position: "relative", display: "flex", alignItems, justifyContent, padding: "clamp(2rem, 6vw, 6rem)", boxSizing: "border-box", overflow: "hidden" }}>
         {hasTint && <span style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, rgba(0,0,0,0.48), rgba(0,0,0,0.22))" }} />}
         {coverStyle === "stripe" && <span style={{ position: "absolute", left: "12%", right: "12%", top: "50%", height: 1, background: "rgba(255,255,255,0.72)" }} />}
         {coverStyle === "frame" && <span style={{ position: "absolute", inset: "clamp(1.25rem, 4vw, 3.2rem)", border: "2px solid rgba(255,255,255,0.9)", boxShadow: "0 0 0 1px rgba(0,0,0,0.2), inset 0 0 0 1px rgba(0,0,0,0.2)" }} />}
         <div style={{ position: "relative", zIndex: 1, textAlign }}>
-          <div style={{ fontFamily: shellFont, fontSize: 11, letterSpacing: "0.2em", marginBottom: "clamp(4rem, 16vh, 9rem)", textTransform: "uppercase", color: "#fff" }}>
-            {BRAND_NAME}
-          </div>
+          <div style={{ fontFamily: shellFont, fontSize: 11, letterSpacing: "0.2em", marginBottom: "clamp(4rem, 16vh, 9rem)", textTransform: "uppercase", color: "#fff" }}>{BRAND_NAME}</div>
           {titleBlock(textAlign, "#fff")}
           {viewButton()}
         </div>
@@ -710,6 +701,7 @@ export default function Gallery() {
 
     return (
       <article
+        onClick={() => setLightbox(photo)}
         onMouseEnter={() => setHoveredPhotoId(photo.id)}
         onMouseLeave={() => setHoveredPhotoId(null)}
         style={{
@@ -728,7 +720,6 @@ export default function Gallery() {
           src={imageUrl}
           alt={photo.alt_text || photo.title || photo.file_name || "Gallery photo"}
           loading="lazy"
-          onClick={() => setLightbox(photo)}
           onError={(event) => {
             if (thumbnailUrl && event.currentTarget.src !== thumbnailUrl) {
               event.currentTarget.src = thumbnailUrl;
@@ -739,18 +730,18 @@ export default function Gallery() {
             height: isSquare || mode === "mosaic" ? "100%" : "auto",
             objectFit: isSquare || mode === "mosaic" ? "cover" : "cover",
             display: "block",
-            transform: hovered ? "scale(1.035)" : "scale(1)",
-            transition: "transform 0.45s ease",
           }}
         />
         <div
-          onClick={() => setLightbox(photo)}
           style={{
             position: "absolute",
-            inset: 0,
-            background: "linear-gradient(to top, rgba(0,0,0,0.76) 0%, rgba(0,0,0,0.5) 18%, rgba(0,0,0,0.12) 42%, transparent 66%)",
+            left: 0,
+            right: 0,
+            bottom: 0,
+            minHeight: 82,
+            background: "linear-gradient(to top, rgba(0,0,0,0.62) 0%, rgba(0,0,0,0.34) 48%, transparent 100%)",
             opacity: hovered ? 1 : 0,
-            transition: "opacity 0.25s ease",
+            transition: "opacity 0.2s ease",
             display: "flex",
             alignItems: "flex-end",
             justifyContent: "flex-end",
@@ -758,93 +749,67 @@ export default function Gallery() {
             padding: "0.8rem",
           }}
         >
-          <div style={{ display: "flex", gap: 8 }}>
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                toggleFavorite(photo.id);
-              }}
-              style={{ ...photoActionButtonStyle, color: isFavorite ? themeColor : "#fff" }}
-              title="Favorite photo"
-            >
-              {isFavorite ? "♥" : "♡"}
-            </button>
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                downloadPhoto(photo);
-              }}
-              style={photoActionButtonStyle}
-              title="Download photo"
-            >
-              ⇩
-            </button>
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                sharePhoto(photo);
-              }}
-              style={photoActionButtonStyle}
-              title="Share photo"
-            >
-              ↗
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              toggleFavorite(photo.id);
+            }}
+            style={{ ...photoActionButtonStyle, color: isFavorite ? themeColor : "#fff" }}
+            title="Favorite photo"
+          >
+            {isFavorite ? "♥" : "♡"}
+          </button>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              downloadPhoto(photo);
+            }}
+            style={photoActionButtonStyle}
+            title="Download photo"
+          >
+            ⇩
+          </button>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              sharePhoto(photo);
+            }}
+            style={photoActionButtonStyle}
+            title="Share photo"
+          >
+            ↗
+          </button>
         </div>
       </article>
     );
   };
 
-  const renderSectionPhotos = (section, items) => {
+  const renderSectionPhotos = (items) => {
     if (!items.length) {
       return <div style={{ color: "#777", fontFamily: shellFont, fontSize: 14 }}>No photos in this set yet.</div>;
     }
 
     if (gridStyle === "square") {
-      return (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: 10 }}>
-          {items.map((photo, index) => <PhotoCard key={photo.id} photo={photo} mode="square" index={index} />)}
-        </div>
-      );
+      return <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: 10 }}>{items.map((photo, index) => <PhotoCard key={photo.id} photo={photo} mode="square" index={index} />)}</div>;
     }
 
     if (gridStyle === "horizontal") {
-      return (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 14 }}>
-          {items.map((photo, index) => <PhotoCard key={photo.id} photo={photo} mode="horizontal" index={index} />)}
-        </div>
-      );
+      return <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 14 }}>{items.map((photo, index) => <PhotoCard key={photo.id} photo={photo} mode="horizontal" index={index} />)}</div>;
     }
 
     if (gridStyle === "mosaic") {
-      return (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gridAutoRows: 170, gap: 10 }}>
-          {items.map((photo, index) => <PhotoCard key={photo.id} photo={photo} mode="mosaic" index={index} />)}
-        </div>
-      );
+      return <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gridAutoRows: 170, gap: 10 }}>{items.map((photo, index) => <PhotoCard key={photo.id} photo={photo} mode="mosaic" index={index} />)}</div>;
     }
 
     if (gridStyle === "filmstrip") {
-      return (
-        <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 12 }}>
-          {items.map((photo, index) => (
-            <div key={photo.id} style={{ flex: "0 0 min(74vw, 420px)" }}>
-              <PhotoCard photo={photo} mode="filmstrip" index={index} />
-            </div>
-          ))}
-        </div>
-      );
+      return <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 12 }}>{items.map((photo, index) => <div key={photo.id} style={{ flex: "0 0 min(74vw, 420px)" }}><PhotoCard photo={photo} mode="filmstrip" index={index} /></div>)}</div>;
     }
 
     const columnCount = gridStyle === "vertical" ? "2 300px" : gridStyle === "clean" ? "4 220px" : gridStyle === "editorial" ? "3 280px" : "3 240px";
-    return (
-      <div style={{ columns: columnCount, columnGap: gridStyle === "editorial" || gridStyle === "clean" ? 18 : 8 }}>
-        {items.map((photo, index) => <PhotoCard key={photo.id} photo={photo} mode={gridStyle} index={index} />)}
-      </div>
-    );
+    return <div style={{ columns: columnCount, columnGap: gridStyle === "editorial" || gridStyle === "clean" ? 18 : 8 }}>{items.map((photo, index) => <PhotoCard key={photo.id} photo={photo} mode={gridStyle} index={index} />)}</div>;
   };
 
   return (
@@ -902,23 +867,10 @@ export default function Gallery() {
         </nav>
 
         <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4 }}>
-          <button
-            type="button"
-            onClick={() => setNotice(favorites.size > 0 ? `${favorites.size} favorite${favorites.size === 1 ? "" : "s"} saved on this device.` : "Tap the heart on any photo to add favorites.")}
-            style={{ ...iconButtonStyle, color: favorites.size > 0 ? themeColor : "#555" }}
-            title="Favorites"
-          >
-            ♡
-          </button>
-          <button type="button" onClick={downloadAllPhotos} style={iconButtonStyle} title="Download all photos">
-            ⇩
-          </button>
-          <button type="button" onClick={shareGallery} style={iconButtonStyle} title="Share gallery">
-            ↗
-          </button>
-          <button type="button" onClick={startSlideshow} style={iconButtonStyle} title="Play slideshow">
-            ▶
-          </button>
+          <button type="button" onClick={() => setNotice(favorites.size > 0 ? `${favorites.size} favorite${favorites.size === 1 ? "" : "s"} saved on this device.` : "Tap the heart on any photo to add favorites.")} style={{ ...actionIconStyle, color: favorites.size > 0 ? themeColor : "#555" }} title="Favorites">♡</button>
+          <button type="button" onClick={downloadGalleryZip} disabled={zipBusy} style={{ ...actionIconStyle, opacity: zipBusy ? 0.45 : 1 }} title="Download gallery ZIP">⇩</button>
+          <button type="button" onClick={shareGallery} style={actionIconStyle} title="Share gallery">↗</button>
+          <button type="button" onClick={startSlideshow} style={actionIconStyle} title="Play slideshow">▶</button>
         </div>
       </header>
 
@@ -944,100 +896,49 @@ export default function Gallery() {
       )}
 
       <main id="gallery-sections" style={{ padding: "clamp(2rem, 5vw, 4rem) clamp(1rem, 4vw, 3rem)" }}>
-        {orderedSections.length === 0 && (
-          <div style={{ color: "#777", fontFamily: shellFont, padding: "4rem 1rem", textAlign: "center" }}>
-            No visible photo sets yet.
-          </div>
-        )}
+        {orderedSections.length === 0 && <div style={{ color: "#777", fontFamily: shellFont, padding: "4rem 1rem", textAlign: "center" }}>No visible photo sets yet.</div>}
 
         {orderedSections.map((section) => {
           const items = sectionPhotos(section.id);
           return (
             <section id={`section-${section.id}`} key={section.id} style={{ scrollMarginTop: 110, marginBottom: "clamp(3rem, 7vw, 6rem)" }}>
               <div style={{ display: "flex", alignItems: "end", justifyContent: "space-between", gap: "1rem", marginBottom: "1.25rem" }}>
-                <h2 style={{ fontFamily: displayFont, fontSize: "clamp(2rem, 4vw, 3.3rem)", lineHeight: 1, margin: 0 }}>
-                  {section.title}
-                </h2>
-                <div style={{ color: "#777", fontFamily: shellFont, fontSize: 12, letterSpacing: "0.12em", textTransform: "uppercase" }}>
-                  {items.length} photo{items.length === 1 ? "" : "s"}
-                </div>
+                <h2 style={{ fontFamily: displayFont, fontSize: "clamp(2rem, 4vw, 3.3rem)", lineHeight: 1, margin: 0 }}>{section.title}</h2>
+                <div style={{ color: "#777", fontFamily: shellFont, fontSize: 12, letterSpacing: "0.12em", textTransform: "uppercase" }}>{items.length} photo{items.length === 1 ? "" : "s"}</div>
               </div>
-              {renderSectionPhotos(section, items)}
+              {renderSectionPhotos(items)}
             </section>
           );
         })}
       </main>
 
       {lightbox && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 220,
-            background: "rgba(0,0,0,0.96)",
-            color: "#fff",
-            display: "grid",
-            gridTemplateRows: "auto 1fr auto",
-          }}
-        >
+        <div style={{ position: "fixed", inset: 0, zIndex: 220, background: "rgba(0,0,0,0.96)", color: "#fff", display: "grid", gridTemplateRows: "auto 1fr auto" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", padding: "1rem clamp(1rem, 3vw, 2rem)" }}>
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontFamily: shellFont, fontSize: 12, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.62)" }}>
-                {lightboxIndex + 1} / {orderedPhotos.length}{slideshowPlaying ? " · Slideshow" : ""}
-              </div>
-              <div style={{ fontFamily: displayFont, fontSize: "1.2rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {lightbox.title || lightbox.file_name || gallery.title}
-              </div>
+              <div style={{ fontFamily: shellFont, fontSize: 12, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.62)" }}>{lightboxIndex + 1} / {publicPhotos.length}{slideshowPlaying ? " · Slideshow" : ""}</div>
+              <div style={{ fontFamily: displayFont, fontSize: "1.2rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lightbox.title || lightbox.file_name || gallery.title}</div>
             </div>
             <button type="button" onClick={() => { setLightbox(null); setSlideshowPlaying(false); }} style={{ background: "transparent", border: "none", color: "#fff", cursor: "pointer", fontSize: 26 }}>×</button>
           </div>
 
           <div style={{ position: "relative", display: "grid", placeItems: "center", minHeight: 0, padding: "0 4rem" }}>
-            {lightboxIndex > 0 && (
-              <button type="button" onClick={() => goLightbox(-1)} style={{ position: "absolute", left: "1rem", background: "transparent", border: "none", color: "#fff", cursor: "pointer", fontSize: "3rem" }}>‹</button>
-            )}
-            <img
-              src={getPhotoUrl(lightbox, "display")}
-              alt={lightbox.alt_text || lightbox.title || lightbox.file_name || "Gallery photo"}
-              style={{ maxWidth: "100%", maxHeight: "78vh", objectFit: "contain", display: "block" }}
-            />
-            {lightboxIndex < orderedPhotos.length - 1 && (
-              <button type="button" onClick={() => goLightbox(1)} style={{ position: "absolute", right: "1rem", background: "transparent", border: "none", color: "#fff", cursor: "pointer", fontSize: "3rem" }}>›</button>
-            )}
+            {lightboxIndex > 0 && <button type="button" onClick={() => goLightbox(-1)} style={{ position: "absolute", left: "1rem", background: "transparent", border: "none", color: "#fff", cursor: "pointer", fontSize: "3rem" }}>‹</button>}
+            <img src={getPhotoUrl(lightbox, "display")} alt={lightbox.alt_text || lightbox.title || lightbox.file_name || "Gallery photo"} style={{ maxWidth: "100%", maxHeight: "78vh", objectFit: "contain", display: "block" }} />
+            {lightboxIndex < publicPhotos.length - 1 && <button type="button" onClick={() => goLightbox(1)} style={{ position: "absolute", right: "1rem", background: "transparent", border: "none", color: "#fff", cursor: "pointer", fontSize: "3rem" }}>›</button>}
           </div>
 
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.8rem", padding: "1rem" }}>
-            <button type="button" onClick={() => toggleFavorite(lightbox.id)} style={{ background: "transparent", border: "none", color: favorites.has(lightbox.id) ? themeColor : "#fff", cursor: "pointer", fontSize: "1.7rem", lineHeight: 1 }}>
-              {favorites.has(lightbox.id) ? "♥" : "♡"}
-            </button>
-            <button type="button" onClick={() => sharePhoto(lightbox)} style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.28)", color: "#fff", cursor: "pointer", fontFamily: shellFont, fontSize: 11, fontWeight: 800, letterSpacing: "0.12em", padding: "0.75rem 1rem", textTransform: "uppercase" }}>
-              Share
-            </button>
-            <button type="button" onClick={() => downloadPhoto(lightbox)} style={{ background: themeColor, border: "none", color: "#111", cursor: "pointer", fontFamily: shellFont, fontSize: 11, fontWeight: 900, letterSpacing: "0.12em", padding: "0.75rem 1rem", textTransform: "uppercase" }}>
-              Download
-            </button>
-            <button type="button" onClick={() => setSlideshowPlaying((playing) => !playing)} style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.28)", color: "#fff", cursor: "pointer", fontFamily: shellFont, fontSize: 11, fontWeight: 800, letterSpacing: "0.12em", padding: "0.75rem 1rem", textTransform: "uppercase" }}>
-              {slideshowPlaying ? "Pause" : "Play"}
-            </button>
+            <button type="button" onClick={() => toggleFavorite(lightbox.id)} style={{ background: "transparent", border: "none", color: favorites.has(lightbox.id) ? themeColor : "#fff", cursor: "pointer", fontSize: "1.7rem", lineHeight: 1 }}>{favorites.has(lightbox.id) ? "♥" : "♡"}</button>
+            <button type="button" onClick={() => sharePhoto(lightbox)} style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.28)", color: "#fff", cursor: "pointer", fontFamily: shellFont, fontSize: 11, fontWeight: 800, letterSpacing: "0.12em", padding: "0.75rem 1rem", textTransform: "uppercase" }}>Share</button>
+            <button type="button" onClick={() => downloadPhoto(lightbox)} style={{ background: themeColor, border: "none", color: "#111", cursor: "pointer", fontFamily: shellFont, fontSize: 11, fontWeight: 900, letterSpacing: "0.12em", padding: "0.75rem 1rem", textTransform: "uppercase" }}>Download</button>
+            <button type="button" onClick={() => setSlideshowPlaying((playing) => !playing)} style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.28)", color: "#fff", cursor: "pointer", fontFamily: shellFont, fontSize: 11, fontWeight: 800, letterSpacing: "0.12em", padding: "0.75rem 1rem", textTransform: "uppercase" }}>{slideshowPlaying ? "Pause" : "Play"}</button>
           </div>
         </div>
       )}
 
       <footer style={{ borderTop: "1px solid rgba(0,0,0,0.08)", padding: "2.5rem 1rem", textAlign: "center" }}>
-        <a
-          href="/"
-          style={{
-            color: "#777",
-            fontFamily: shellFont,
-            fontSize: 10,
-            fontWeight: 800,
-            letterSpacing: "0.16em",
-            textDecoration: "none",
-            textTransform: "uppercase",
-          }}
-        >
-          {BRAND_NAME}
-        </a>
+        <a href="/" style={{ color: "#777", fontFamily: shellFont, fontSize: 10, fontWeight: 800, letterSpacing: "0.16em", textDecoration: "none", textTransform: "uppercase" }}>{BRAND_NAME}</a>
       </footer>
     </div>
   );
