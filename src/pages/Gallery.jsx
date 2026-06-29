@@ -300,23 +300,33 @@ export default function Gallery() {
     copyText(url, "Photo link copied.");
   };
 
-  const downloadPhoto = (photo) => {
+  const downloadPhoto = async (photo) => {
     const url = getPhotoUrl(photo, "original");
     if (!url) return;
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = photo.file_name || "gallery-photo";
-    link.target = "_blank";
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error("Download failed.");
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = photo.file_name || "gallery-photo.jpg";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    } catch {
+      setNotice("Download could not start. Please try again.");
+    }
   };
 
   const downloadAllPhotos = async () => {
     if (!orderedPhotos.length) return;
     setNotice(`Starting ${orderedPhotos.length} photo download${orderedPhotos.length === 1 ? "" : "s"}.`);
     for (const photo of orderedPhotos) {
-      downloadPhoto(photo);
+      await downloadPhoto(photo);
       await new Promise((resolve) => window.setTimeout(resolve, 130));
     }
   };
@@ -346,6 +356,19 @@ export default function Gallery() {
     fontSize: 24,
     lineHeight: 1,
     padding: "0.55rem 0.65rem",
+  };
+
+  const photoActionButtonStyle = {
+    background: "rgba(255,255,255,0.1)",
+    border: "1px solid rgba(255,255,255,0.18)",
+    color: "#fff",
+    cursor: "pointer",
+    display: "grid",
+    fontSize: 18,
+    height: 38,
+    lineHeight: 1,
+    placeItems: "center",
+    width: 38,
   };
 
   if (state === "loading") {
@@ -695,7 +718,7 @@ export default function Gallery() {
           position: "relative",
           overflow: "hidden",
           background: "#111",
-          cursor: "zoom-in",
+          cursor: "pointer",
           gridColumn: isMosaicFeature ? "span 2" : undefined,
           gridRow: isMosaicFeature ? "span 2" : undefined,
           aspectRatio: isSquare || mode === "mosaic" ? "1 / 1" : undefined,
@@ -721,62 +744,53 @@ export default function Gallery() {
           }}
         />
         <div
+          onClick={() => setLightbox(photo)}
           style={{
             position: "absolute",
             inset: 0,
-            background: "linear-gradient(to top, rgba(0,0,0,0.74), rgba(0,0,0,0.06) 58%, transparent)",
+            background: "linear-gradient(to top, rgba(0,0,0,0.76) 0%, rgba(0,0,0,0.5) 18%, rgba(0,0,0,0.12) 42%, transparent 66%)",
             opacity: hovered ? 1 : 0,
             transition: "opacity 0.25s ease",
             display: "flex",
             alignItems: "flex-end",
-            justifyContent: "space-between",
+            justifyContent: "flex-end",
             gap: "0.75rem",
             padding: "0.8rem",
           }}
         >
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              setLightbox(photo);
-            }}
-            style={{
-              background: "rgba(255,255,255,0.14)",
-              border: "1px solid rgba(255,255,255,0.36)",
-              color: "#fff",
-              cursor: "pointer",
-              fontFamily: shellFont,
-              fontSize: 10,
-              fontWeight: 800,
-              letterSpacing: "0.12em",
-              padding: "0.55rem 0.75rem",
-              textTransform: "uppercase",
-            }}
-          >
-            View
-          </button>
           <div style={{ display: "flex", gap: 8 }}>
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                sharePhoto(photo);
-              }}
-              style={{ background: "transparent", border: "none", color: "#fff", cursor: "pointer", fontSize: "1.1rem" }}
-              title="Share photo"
-            >
-              ↗
-            </button>
             <button
               type="button"
               onClick={(event) => {
                 event.stopPropagation();
                 toggleFavorite(photo.id);
               }}
-              style={{ background: "transparent", border: "none", color: isFavorite ? themeColor : "#fff", cursor: "pointer", fontSize: "1.35rem", lineHeight: 1 }}
+              style={{ ...photoActionButtonStyle, color: isFavorite ? themeColor : "#fff" }}
               title="Favorite photo"
             >
               {isFavorite ? "♥" : "♡"}
+            </button>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                downloadPhoto(photo);
+              }}
+              style={photoActionButtonStyle}
+              title="Download photo"
+            >
+              ⇩
+            </button>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                sharePhoto(photo);
+              }}
+              style={photoActionButtonStyle}
+              title="Share photo"
+            >
+              ↗
             </button>
           </div>
         </div>
