@@ -5,6 +5,7 @@ import { supabase } from "../lib/supabase";
 const BUCKET = "client-galleries";
 const WATERMARK_CLASS = "est-gallery-watermark-overlay";
 const WATERMARK_IMAGE_CLASS = "est-gallery-watermark-image";
+const WATERMARK_RENDER_VERSION = "reactless-v3";
 
 function isPublicGalleryPage() {
   return window.location.pathname.startsWith("/gallery/");
@@ -37,16 +38,20 @@ function removeWatermarks() {
   document.querySelectorAll(`.${WATERMARK_CLASS}`).forEach((node) => node.remove());
 }
 
+function getLightboxFrame() {
+  return document.querySelector('div[style*="rgba(0,0,0,0.96)"] div[style*="place-items: center"]');
+}
+
 function isLightboxImage(image) {
-  return !image.closest("main#gallery-sections");
+  return Boolean(getLightboxFrame()?.contains(image));
 }
 
 function getWatermarkParent(image) {
+  const lightboxFrame = getLightboxFrame();
+  if (lightboxFrame?.contains(image)) return lightboxFrame;
+
   const photoCard = image.closest("article");
   if (photoCard) return photoCard;
-
-  const lightboxFrame = image.parentElement;
-  if (lightboxFrame && lightboxFrame.style?.placeItems === "center") return lightboxFrame;
 
   return image.parentElement;
 }
@@ -85,34 +90,38 @@ function positionOverlay(overlay, image, parent, lightbox) {
   });
 }
 
-function styleWatermark(overlay, config, image, parent) {
+function applyBaseOverlayStyle(overlay, image, parent, lightbox, lightboxOpen) {
+  positionOverlay(overlay, image, parent, lightbox);
+  Object.assign(overlay.style, {
+    position: "absolute",
+    zIndex: lightbox ? "3" : "1",
+    pointerEvents: "none",
+    overflow: "hidden",
+    boxSizing: "border-box",
+    userSelect: "none",
+    visibility: lightboxOpen && !lightbox ? "hidden" : "visible",
+  });
+}
+
+function styleWatermark(overlay, config, image, parent, lightboxOpen) {
   const mode = config.watermarkMode || "off";
   const lightbox = isLightboxImage(image);
   const layout = lightbox ? "fit" : config.watermarkLayout || "fit";
   const watermarkUrl = storageUrl(config.watermarkFilePath);
   const strong = mode === "strong";
   const imageRect = image.getBoundingClientRect();
-  const key = `${watermarkUrl}|${mode}|${layout}|${lightbox}|${Math.round(imageRect.width)}x${Math.round(imageRect.height)}`;
+  const key = `${WATERMARK_RENDER_VERSION}|${watermarkUrl}|${mode}|${layout}|${lightbox}|${Math.round(imageRect.width)}x${Math.round(imageRect.height)}`;
 
   if (!watermarkUrl) {
     resetOverlay(overlay);
     return;
   }
 
-  positionOverlay(overlay, image, parent, lightbox);
+  applyBaseOverlayStyle(overlay, image, parent, lightbox, lightboxOpen);
   if (overlay.dataset.watermarkKey === key) return;
 
   overlay.dataset.watermarkKey = key;
   overlay.innerHTML = "";
-
-  Object.assign(overlay.style, {
-    position: "absolute",
-    zIndex: lightbox ? "2" : "1",
-    pointerEvents: "none",
-    overflow: "hidden",
-    boxSizing: "border-box",
-    userSelect: "none",
-  });
 
   if (layout === "tile") {
     Object.assign(overlay.style, {
@@ -121,8 +130,8 @@ function styleWatermark(overlay, config, image, parent) {
       backgroundImage: `url("${watermarkUrl}")`,
       backgroundRepeat: "repeat",
       backgroundPosition: "center",
-      backgroundSize: strong ? "150px auto" : "190px auto",
-      opacity: strong ? "0.4" : "0.24",
+      backgroundSize: strong ? "132px auto" : "172px auto",
+      opacity: strong ? "0.46" : "0.28",
       filter: "drop-shadow(0 4px 14px rgba(0,0,0,0.3))",
     });
     return;
@@ -131,7 +140,7 @@ function styleWatermark(overlay, config, image, parent) {
   Object.assign(overlay.style, {
     display: "grid",
     placeItems: "center",
-    padding: strong ? "clamp(1rem, 4vw, 3rem)" : "clamp(1rem, 5vw, 4rem)",
+    padding: lightbox ? "0" : strong ? "clamp(1rem, 4vw, 3rem)" : "clamp(1rem, 5vw, 4rem)",
     backgroundImage: "none",
     backgroundRepeat: "no-repeat",
     backgroundSize: "auto",
@@ -150,7 +159,7 @@ function styleWatermark(overlay, config, image, parent) {
     maxWidth: lightbox ? (strong ? "52%" : "38%") : (strong ? "min(62%, 560px)" : "min(44%, 380px)"),
     maxHeight: lightbox ? (strong ? "34%" : "24%") : (strong ? "42%" : "30%"),
     objectFit: "contain",
-    opacity: strong ? "0.54" : "0.3",
+    opacity: strong ? "0.56" : "0.32",
     filter: "drop-shadow(0 8px 28px rgba(0,0,0,0.38))",
     transform: "rotate(-14deg)",
     userSelect: "none",
@@ -159,18 +168,25 @@ function styleWatermark(overlay, config, image, parent) {
   overlay.appendChild(watermarkImage);
 }
 
+function getTargetImages() {
+  const lightboxFrame = getLightboxFrame();
+  const lightboxImage = lightboxFrame?.querySelector("img:not(.est-gallery-watermark-image)");
+  if (lightboxImage) return [lightboxImage];
+
+  return Array.from(document.querySelectorAll("main#gallery-sections article > img"));
+}
+
 function applyWatermarks(config) {
   if (!isPublicGalleryPage() || !config || config.watermarkMode === "off" || !config.watermarkFilePath) {
     removeWatermarks();
     return;
   }
 
-  const targets = document.querySelectorAll("main#gallery-sections img, div[style*='rgba(0,0,0,0.96)'] img");
+  const lightboxOpen = Boolean(getLightboxFrame()?.querySelector("img:not(.est-gallery-watermark-image)"));
+  const targets = getTargetImages();
   const activeParents = new Set();
 
   targets.forEach((image) => {
-    if (image.closest?.(`.${WATERMARK_CLASS}`)) return;
-
     const parent = getWatermarkParent(image);
     if (!parent) return;
     activeParents.add(parent);
@@ -184,7 +200,7 @@ function applyWatermarks(config) {
       overlay.className = WATERMARK_CLASS;
       parent.appendChild(overlay);
     }
-    styleWatermark(overlay, config, image, parent);
+    styleWatermark(overlay, config, image, parent, lightboxOpen);
   });
 
   document.querySelectorAll(`.${WATERMARK_CLASS}`).forEach((overlay) => {
@@ -241,11 +257,13 @@ export default function GalleryImageGuard() {
     const observer = new MutationObserver(() => scheduleWatermarkSync());
     observer.observe(document.body, { childList: true, subtree: true });
     window.addEventListener("resize", scheduleWatermarkSync);
+    window.addEventListener("scroll", scheduleWatermarkSync, true);
 
     return () => {
       cancelled = true;
       observer.disconnect();
       window.removeEventListener("resize", scheduleWatermarkSync);
+      window.removeEventListener("scroll", scheduleWatermarkSync, true);
       if (frameRef.current) window.cancelAnimationFrame(frameRef.current);
       frameRef.current = null;
       removeWatermarks();
