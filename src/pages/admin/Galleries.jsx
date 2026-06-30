@@ -89,6 +89,7 @@ function CreateGalleryModal({ onClose, onCreated }) {
       setError("Gallery title and URL slug are required.");
       return;
     }
+
     setSaving(true);
     setError("");
     const { data: gallery, error: galleryError } = await supabase
@@ -123,6 +124,7 @@ function CreateGalleryModal({ onClose, onCreated }) {
       setError(`Gallery was created, but the default Highlights section failed: ${sectionError.message}`);
       return;
     }
+
     onCreated(gallery);
   }
 
@@ -136,6 +138,7 @@ function CreateGalleryModal({ onClose, onCreated }) {
           </div>
           <button type="button" onClick={onClose} style={secondaryButton}>Close</button>
         </div>
+
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "1rem", padding: "1.5rem" }}>
           <label><FieldLabel>Gallery Title *</FieldLabel><input value={form.title} onChange={(event) => { const title = event.target.value; setForm((current) => ({ ...current, title, slug: current.slug === slugify(current.title) ? slugify(title) : current.slug })); }} placeholder="Martinez Wedding" style={inputStyle} /></label>
           <label><FieldLabel>URL Slug *</FieldLabel><input value={form.slug} onChange={(event) => set("slug", slugify(event.target.value))} placeholder="martinez-wedding" style={inputStyle} /></label>
@@ -145,6 +148,7 @@ function CreateGalleryModal({ onClose, onCreated }) {
           <label><FieldLabel>Status</FieldLabel><select value={form.status} onChange={(event) => set("status", event.target.value)} style={inputStyle}>{STATUS_OPTIONS.map((status) => <option key={status} value={status}>{status.charAt(0).toUpperCase() + status.slice(1)}</option>)}</select></label>
           <label style={{ gridColumn: "1 / -1" }}><FieldLabel>Description</FieldLabel><textarea value={form.description} onChange={(event) => set("description", event.target.value)} placeholder="Private client collection notes, event context, or gallery intro." rows={4} style={{ ...inputStyle, resize: "vertical" }} /></label>
         </div>
+
         {error && <div style={{ margin: "0 1.5rem 1rem", border: "1px solid rgba(224,92,92,0.35)", color: "#ff8b8b", fontFamily: "'Inter', sans-serif", fontSize: 13, padding: "12px 14px" }}>{error}</div>}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem", borderTop: `1px solid ${COLORS.border}`, padding: "1.25rem 1.5rem" }}>
           <button type="button" onClick={onClose} style={secondaryButton}>Cancel</button>
@@ -169,24 +173,36 @@ export default function Galleries() {
     setLoading(true);
     setError("");
     const { data, error: fetchError } = await supabase.from("client_galleries").select("*").order("created_at", { ascending: false });
-    if (fetchError) { setError(fetchError.message); setGalleries([]); } else setGalleries(data || []);
+    if (fetchError) {
+      setError(fetchError.message);
+      setGalleries([]);
+    } else {
+      setGalleries(data || []);
+    }
     setLoading(false);
   }
 
   const handleSignOut = async () => { await supabase.auth.signOut(); navigate("/admin/login"); };
   const openGallery = (galleryId) => navigate(`/admin/galleries/${galleryId}`);
+  const openAccess = (galleryId) => navigate(`/admin/galleries/${galleryId}/access`);
+
   function copyPreviewPath(slug) {
     if (!slug) return;
     navigator.clipboard?.writeText(`${window.location.origin}/gallery/${slug}`);
     setNotice("Gallery link copied.");
   }
+
   async function toggleGalleryStatus(gallery) {
     const nextStatus = gallery.status === "published" ? "draft" : "published";
     const { data, error: updateError } = await supabase.from("client_galleries").update({ status: nextStatus }).eq("id", gallery.id).select("*").single();
-    if (updateError) { setError(updateError.message); return; }
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
     setGalleries((current) => current.map((item) => (item.id === gallery.id ? data : item)));
     setNotice(nextStatus === "published" ? "Gallery published." : "Gallery hidden.");
   }
+
   async function deleteGallery(gallery) {
     const title = gallery.title || "Untitled Gallery";
     const firstConfirm = window.confirm(`Delete "${title}"? This removes the gallery, photo sets, and gallery photo records. This cannot be undone.`);
@@ -194,7 +210,10 @@ export default function Galleries() {
     const secondConfirm = window.prompt(`Type DELETE to permanently delete "${title}".`);
     if (secondConfirm !== "DELETE") return;
     const { error: deleteError } = await supabase.from("client_galleries").delete().eq("id", gallery.id);
-    if (deleteError) { setError(deleteError.message); return; }
+    if (deleteError) {
+      setError(deleteError.message);
+      return;
+    }
     setGalleries((current) => current.filter((item) => item.id !== gallery.id));
     setNotice("Gallery deleted.");
   }
@@ -211,11 +230,39 @@ export default function Galleries() {
           </div>
           <button type="button" onClick={() => setShowCreate(true)} style={primaryButton}>+ New Gallery</button>
         </div>
+
         {error && <div style={{ border: "1px solid rgba(224,92,92,0.35)", color: "#ff8b8b", fontFamily: "'Inter', sans-serif", fontSize: 13, marginBottom: "1rem", padding: "12px 14px" }}>{error}</div>}
         {notice && <div style={{ border: "1px solid rgba(74,222,128,0.28)", color: "#9af0b8", fontFamily: "'Inter', sans-serif", fontSize: 13, marginBottom: "1rem", padding: "12px 14px" }}>{notice}</div>}
         {loading && <Spinner />}
         {!loading && galleries.length === 0 && <div style={{ border: `1px dashed ${COLORS.border}`, color: COLORS.muted, fontFamily: "'Inter', sans-serif", padding: "4rem 2rem", textAlign: "center" }}>No client galleries yet. Create one to start building a collection workspace.</div>}
-        {!loading && galleries.length > 0 && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "1rem" }}>{galleries.map((gallery) => <article key={gallery.id} style={{ background: COLORS.surfaceDark || "#060606", border: `1px solid ${COLORS.border}`, minHeight: 260, display: "flex", flexDirection: "column" }}><button type="button" onClick={() => openGallery(gallery.id)} style={{ flex: 1, textAlign: "left", background: "transparent", border: "none", color: "inherit", cursor: "pointer", padding: "1.4rem" }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem", marginBottom: "1.25rem" }}><StatusButton status={gallery.status} onClick={() => toggleGalleryStatus(gallery)} /><span style={{ color: COLORS.muted, fontFamily: "'Inter', sans-serif", fontSize: 11 }}>{formatDate(gallery.event_date)}</span></div><h2 style={{ color: COLORS.white, fontFamily: "'Playfair Display', serif", fontSize: "1.35rem", lineHeight: 1.15, margin: "0 0 0.75rem" }}>{gallery.title || "Untitled Gallery"}</h2><div style={{ color: COLORS.muted, fontFamily: "'Inter', sans-serif", fontSize: 13, lineHeight: 1.7 }}><div>{gallery.client_name || "No client name"}</div><div>{gallery.client_email || "No client email"}</div><div style={{ marginTop: 12, color: COLORS.gold }}>/gallery/{gallery.slug || "draft-link"}</div></div></button><div style={{ borderTop: `1px solid ${COLORS.border}`, display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "0.5rem", padding: "0.9rem 1rem" }}><button type="button" onClick={() => openGallery(gallery.id)} style={secondaryButton}>View</button><button type="button" onClick={() => copyPreviewPath(gallery.slug)} style={{ ...secondaryButton, color: COLORS.gold }}>Copy Link</button><button type="button" onClick={() => deleteGallery(gallery)} style={{ ...secondaryButton, color: "#ff8b8b", borderColor: "rgba(255,139,139,0.45)" }}>Delete</button></div></article>)}</div>}
+
+        {!loading && galleries.length > 0 && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "1rem" }}>
+            {galleries.map((gallery) => (
+              <article key={gallery.id} style={{ background: COLORS.surfaceDark || "#060606", border: `1px solid ${COLORS.border}`, minHeight: 260, display: "flex", flexDirection: "column" }}>
+                <button type="button" onClick={() => openGallery(gallery.id)} style={{ flex: 1, textAlign: "left", background: "transparent", border: "none", color: "inherit", cursor: "pointer", padding: "1.4rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem", marginBottom: "1.25rem" }}>
+                    <StatusButton status={gallery.status} onClick={() => toggleGalleryStatus(gallery)} />
+                    <span style={{ color: COLORS.muted, fontFamily: "'Inter', sans-serif", fontSize: 11 }}>{formatDate(gallery.event_date)}</span>
+                  </div>
+                  <h2 style={{ color: COLORS.white, fontFamily: "'Playfair Display', serif", fontSize: "1.35rem", lineHeight: 1.15, margin: "0 0 0.75rem" }}>{gallery.title || "Untitled Gallery"}</h2>
+                  <div style={{ color: COLORS.muted, fontFamily: "'Inter', sans-serif", fontSize: 13, lineHeight: 1.7 }}>
+                    <div>{gallery.client_name || "No client name"}</div>
+                    <div>{gallery.client_email || "No client email"}</div>
+                    <div style={{ marginTop: 12, color: COLORS.gold }}>/gallery/{gallery.slug || "draft-link"}</div>
+                    <div style={{ marginTop: 8, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.12em" }}>Access: {gallery.access_mode || "public"}</div>
+                  </div>
+                </button>
+                <div style={{ borderTop: `1px solid ${COLORS.border}`, display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "0.5rem", padding: "0.9rem 1rem" }}>
+                  <button type="button" onClick={() => openGallery(gallery.id)} style={secondaryButton}>View</button>
+                  <button type="button" onClick={() => openAccess(gallery.id)} style={{ ...secondaryButton, color: COLORS.gold }}>Access</button>
+                  <button type="button" onClick={() => copyPreviewPath(gallery.slug)} style={secondaryButton}>Copy</button>
+                  <button type="button" onClick={() => deleteGallery(gallery)} style={{ ...secondaryButton, color: "#ff8b8b", borderColor: "rgba(255,139,139,0.45)" }}>Delete</button>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
       </main>
       {showCreate && <CreateGalleryModal onClose={() => setShowCreate(false)} onCreated={(gallery) => { setShowCreate(false); navigate(`/admin/galleries/${gallery.id}`); }} />}
     </div>
