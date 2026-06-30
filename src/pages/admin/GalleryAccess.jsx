@@ -173,6 +173,8 @@ export default function GalleryAccess() {
       allow_downloads: gallery.allow_downloads !== false,
       allow_favorites: gallery.allow_favorites !== false,
       allow_sharing: gallery.allow_sharing !== false,
+      watermark_mode: gallery.watermark_mode || "off",
+      watermark_text: (gallery.watermark_text || "").trim() || null,
     };
 
     const { data, error: updateError } = await supabase
@@ -326,6 +328,25 @@ export default function GalleryAccess() {
               <ToggleRow title="Allow sharing" description="Controls share buttons and the share modal." checked={gallery.allow_sharing !== false} onChange={(value) => setField("allow_sharing", value)} />
             </div>
 
+            <div style={{ border: `1px solid ${COLORS.border}`, background: "rgba(255,255,255,0.025)", padding: "1rem", display: "grid", gap: "1rem" }}>
+              <div>
+                <h2 style={{ fontFamily: shellFont, fontSize: 16, margin: "0 0 0.35rem" }}>Watermark</h2>
+                <p style={{ color: COLORS.muted, fontFamily: shellFont, fontSize: 12, lineHeight: 1.7, margin: 0 }}>Adds a visible overlay on public gallery photos. This discourages screenshots and unauthorized sharing, but it does not replace private storage or signed URLs.</p>
+              </div>
+              <label>
+                <FieldLabel>Watermark Mode</FieldLabel>
+                <select value={gallery.watermark_mode || "off"} onChange={(event) => setField("watermark_mode", event.target.value)} style={inputStyle}>
+                  <option value="off">Off</option>
+                  <option value="subtle">Subtle</option>
+                  <option value="strong">Strong</option>
+                </select>
+              </label>
+              <label>
+                <FieldLabel>Watermark Text</FieldLabel>
+                <input value={gallery.watermark_text || ""} onChange={(event) => setField("watermark_text", event.target.value)} placeholder="Estanler Aleman Photography" style={inputStyle} />
+              </label>
+            </div>
+
             <button type="button" onClick={saveAccessSettings} disabled={saving} style={{ ...primaryButtonStyle, opacity: saving ? 0.6 : 1 }}>{saving ? "Saving..." : "Save Access Settings"}</button>
           </div>
 
@@ -339,6 +360,7 @@ export default function GalleryAccess() {
               <div><strong style={{ color: COLORS.white }}>Downloads:</strong> {gallery.allow_downloads !== false ? "On" : "Off"}</div>
               <div><strong style={{ color: COLORS.white }}>Favorites:</strong> {gallery.allow_favorites !== false ? "On" : "Off"}</div>
               <div><strong style={{ color: COLORS.white }}>Sharing:</strong> {gallery.allow_sharing !== false ? "On" : "Off"}</div>
+              <div><strong style={{ color: COLORS.white }}>Watermark:</strong> {gallery.watermark_mode || "off"}</div>
             </div>
             <div style={{ marginTop: "1rem" }}>
               <FieldLabel>Share Link</FieldLabel>
