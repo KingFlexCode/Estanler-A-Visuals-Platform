@@ -40,49 +40,62 @@ function getWatermarkParent(image) {
   return image.parentElement;
 }
 
-function applyWatermarks(config) {
-  removeWatermarks();
-  if (!isPublicGalleryPage()) return;
-  if (!config || config.watermarkMode === "off") return;
-
-  const watermarkText = (config.watermarkText || DEFAULT_WATERMARK_TEXT).trim() || DEFAULT_WATERMARK_TEXT;
+function styleWatermark(overlay, config) {
   const strong = config.watermarkMode === "strong";
+  overlay.textContent = (config.watermarkText || DEFAULT_WATERMARK_TEXT).trim() || DEFAULT_WATERMARK_TEXT;
+  Object.assign(overlay.style, {
+    position: "absolute",
+    inset: "0",
+    zIndex: "12",
+    pointerEvents: "none",
+    display: "grid",
+    placeItems: "center",
+    color: "rgba(255,255,255,0.86)",
+    fontFamily: "Inter, Arial, sans-serif",
+    fontSize: strong ? "clamp(1rem, 4.5vw, 3.25rem)" : "clamp(0.85rem, 2.7vw, 1.85rem)",
+    fontWeight: strong ? "900" : "800",
+    letterSpacing: strong ? "0.16em" : "0.12em",
+    lineHeight: "1.2",
+    opacity: strong ? "0.46" : "0.24",
+    textAlign: "center",
+    textShadow: "0 2px 14px rgba(0,0,0,0.58)",
+    textTransform: "uppercase",
+    transform: "rotate(-18deg)",
+    userSelect: "none",
+    mixBlendMode: "screen",
+    padding: "1rem",
+    boxSizing: "border-box",
+  });
+}
+
+function applyWatermarks(config) {
+  if (!isPublicGalleryPage() || !config || config.watermarkMode === "off") {
+    removeWatermarks();
+    return;
+  }
+
   const targets = document.querySelectorAll("main#gallery-sections img, div[style*='rgba(0,0,0,0.96)'] img");
+  const activeParents = new Set();
 
   targets.forEach((image) => {
     const parent = getWatermarkParent(image);
-    if (!parent || parent.querySelector?.(`.${WATERMARK_CLASS}`)) return;
+    if (!parent) return;
+    activeParents.add(parent);
 
     const currentPosition = window.getComputedStyle(parent).position;
     if (currentPosition === "static") parent.style.position = "relative";
 
-    const overlay = document.createElement("span");
-    overlay.className = WATERMARK_CLASS;
-    overlay.textContent = watermarkText;
-    Object.assign(overlay.style, {
-      position: "absolute",
-      inset: "0",
-      zIndex: "12",
-      pointerEvents: "none",
-      display: "grid",
-      placeItems: "center",
-      color: "rgba(255,255,255,0.86)",
-      fontFamily: "Inter, Arial, sans-serif",
-      fontSize: strong ? "clamp(1rem, 4.5vw, 3.25rem)" : "clamp(0.85rem, 2.7vw, 1.85rem)",
-      fontWeight: strong ? "900" : "800",
-      letterSpacing: strong ? "0.16em" : "0.12em",
-      lineHeight: "1.2",
-      opacity: strong ? "0.46" : "0.24",
-      textAlign: "center",
-      textShadow: "0 2px 14px rgba(0,0,0,0.58)",
-      textTransform: "uppercase",
-      transform: "rotate(-18deg)",
-      userSelect: "none",
-      mixBlendMode: "screen",
-      padding: "1rem",
-      boxSizing: "border-box",
-    });
-    parent.appendChild(overlay);
+    let overlay = Array.from(parent.children).find((child) => child.classList?.contains(WATERMARK_CLASS));
+    if (!overlay) {
+      overlay = document.createElement("span");
+      overlay.className = WATERMARK_CLASS;
+      parent.appendChild(overlay);
+    }
+    styleWatermark(overlay, config);
+  });
+
+  document.querySelectorAll(`.${WATERMARK_CLASS}`).forEach((overlay) => {
+    if (!activeParents.has(overlay.parentElement)) overlay.remove();
   });
 }
 
@@ -97,10 +110,19 @@ function normalizeConfig(gallery) {
 export default function GalleryImageGuard() {
   const location = useLocation();
   const configRef = useRef({ downloadsEnabled: true, watermarkMode: "off", watermarkText: DEFAULT_WATERMARK_TEXT });
+  const frameRef = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
     const slug = getSlugFromPathname(location.pathname);
+
+    function scheduleWatermarkSync() {
+      if (frameRef.current) return;
+      frameRef.current = window.requestAnimationFrame(() => {
+        frameRef.current = null;
+        applyWatermarks(configRef.current);
+      });
+    }
 
     async function loadGalleryProtection() {
       if (!slug) {
@@ -117,17 +139,19 @@ export default function GalleryImageGuard() {
 
       if (cancelled || error) return;
       if (data?.gallery) configRef.current = normalizeConfig(data.gallery);
-      applyWatermarks(configRef.current);
+      scheduleWatermarkSync();
     }
 
     loadGalleryProtection();
 
-    const observer = new MutationObserver(() => applyWatermarks(configRef.current));
+    const observer = new MutationObserver(() => scheduleWatermarkSync());
     observer.observe(document.body, { childList: true, subtree: true });
 
     return () => {
       cancelled = true;
       observer.disconnect();
+      if (frameRef.current) window.cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
       removeWatermarks();
     };
   }, [location.pathname]);
