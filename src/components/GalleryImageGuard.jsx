@@ -37,6 +37,10 @@ function removeWatermarks() {
   document.querySelectorAll(`.${WATERMARK_CLASS}`).forEach((node) => node.remove());
 }
 
+function isLightboxImage(image) {
+  return !image.closest("main#gallery-sections");
+}
+
 function getWatermarkParent(image) {
   const photoCard = image.closest("article");
   if (photoCard) return photoCard;
@@ -54,21 +58,48 @@ function resetOverlay(overlay) {
   overlay.style.backgroundSize = "initial";
   overlay.style.backgroundPosition = "initial";
   overlay.style.opacity = "";
+  overlay.style.filter = "none";
   overlay.dataset.watermarkKey = "";
 }
 
-function styleWatermark(overlay, config) {
+function positionOverlay(overlay, image, parent, lightbox) {
+  if (!lightbox) {
+    Object.assign(overlay.style, {
+      inset: "0",
+      left: "auto",
+      top: "auto",
+      width: "auto",
+      height: "auto",
+    });
+    return;
+  }
+
+  const imageRect = image.getBoundingClientRect();
+  const parentRect = parent.getBoundingClientRect();
+  Object.assign(overlay.style, {
+    inset: "auto",
+    left: `${imageRect.left - parentRect.left}px`,
+    top: `${imageRect.top - parentRect.top}px`,
+    width: `${imageRect.width}px`,
+    height: `${imageRect.height}px`,
+  });
+}
+
+function styleWatermark(overlay, config, image, parent) {
   const mode = config.watermarkMode || "off";
-  const layout = config.watermarkLayout || "fit";
+  const lightbox = isLightboxImage(image);
+  const layout = lightbox ? "fit" : config.watermarkLayout || "fit";
   const watermarkUrl = storageUrl(config.watermarkFilePath);
   const strong = mode === "strong";
-  const key = `${watermarkUrl}|${mode}|${layout}`;
+  const imageRect = image.getBoundingClientRect();
+  const key = `${watermarkUrl}|${mode}|${layout}|${lightbox}|${Math.round(imageRect.width)}x${Math.round(imageRect.height)}`;
 
   if (!watermarkUrl) {
     resetOverlay(overlay);
     return;
   }
 
+  positionOverlay(overlay, image, parent, lightbox);
   if (overlay.dataset.watermarkKey === key) return;
 
   overlay.dataset.watermarkKey = key;
@@ -76,7 +107,6 @@ function styleWatermark(overlay, config) {
 
   Object.assign(overlay.style, {
     position: "absolute",
-    inset: "0",
     zIndex: "2147483000",
     pointerEvents: "none",
     overflow: "hidden",
@@ -91,7 +121,7 @@ function styleWatermark(overlay, config) {
       backgroundImage: `url("${watermarkUrl}")`,
       backgroundRepeat: "repeat",
       backgroundPosition: "center",
-      backgroundSize: strong ? "min(34%, 220px) auto" : "min(42%, 280px) auto",
+      backgroundSize: strong ? "clamp(96px, 18%, 190px) auto" : "clamp(116px, 22%, 230px) auto",
       opacity: strong ? "0.36" : "0.2",
       filter: "drop-shadow(0 4px 14px rgba(0,0,0,0.3))",
     });
@@ -103,19 +133,22 @@ function styleWatermark(overlay, config) {
     placeItems: "center",
     padding: strong ? "clamp(1rem, 4vw, 3rem)" : "clamp(1rem, 5vw, 4rem)",
     backgroundImage: "none",
+    backgroundRepeat: "no-repeat",
+    backgroundSize: "auto",
+    backgroundPosition: "center",
     opacity: "1",
     filter: "none",
   });
 
-  const image = document.createElement("img");
-  image.className = WATERMARK_IMAGE_CLASS;
-  image.src = watermarkUrl;
-  image.alt = "";
-  image.draggable = false;
-  Object.assign(image.style, {
+  const watermarkImage = document.createElement("img");
+  watermarkImage.className = WATERMARK_IMAGE_CLASS;
+  watermarkImage.src = watermarkUrl;
+  watermarkImage.alt = "";
+  watermarkImage.draggable = false;
+  Object.assign(watermarkImage.style, {
     display: "block",
-    maxWidth: strong ? "min(62%, 560px)" : "min(44%, 380px)",
-    maxHeight: strong ? "42%" : "30%",
+    maxWidth: lightbox ? (strong ? "52%" : "38%") : (strong ? "min(62%, 560px)" : "min(44%, 380px)"),
+    maxHeight: lightbox ? (strong ? "34%" : "24%") : (strong ? "42%" : "30%"),
     objectFit: "contain",
     opacity: strong ? "0.54" : "0.3",
     filter: "drop-shadow(0 8px 28px rgba(0,0,0,0.38))",
@@ -123,7 +156,7 @@ function styleWatermark(overlay, config) {
     userSelect: "none",
   });
 
-  overlay.appendChild(image);
+  overlay.appendChild(watermarkImage);
 }
 
 function applyWatermarks(config) {
@@ -151,7 +184,7 @@ function applyWatermarks(config) {
       overlay.className = WATERMARK_CLASS;
       parent.appendChild(overlay);
     }
-    styleWatermark(overlay, config);
+    styleWatermark(overlay, config, image, parent);
   });
 
   document.querySelectorAll(`.${WATERMARK_CLASS}`).forEach((overlay) => {
@@ -207,10 +240,12 @@ export default function GalleryImageGuard() {
 
     const observer = new MutationObserver(() => scheduleWatermarkSync());
     observer.observe(document.body, { childList: true, subtree: true });
+    window.addEventListener("resize", scheduleWatermarkSync);
 
     return () => {
       cancelled = true;
       observer.disconnect();
+      window.removeEventListener("resize", scheduleWatermarkSync);
       if (frameRef.current) window.cancelAnimationFrame(frameRef.current);
       frameRef.current = null;
       removeWatermarks();
