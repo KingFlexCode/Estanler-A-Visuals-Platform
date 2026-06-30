@@ -15,6 +15,7 @@ import AdminLogin from "./pages/admin/Login";
 import Dashboard from "./pages/admin/Dashboard";
 import Galleries from "./pages/admin/Galleries";
 import GalleryEditor from "./pages/admin/GalleryEditor";
+import GalleryAccess from "./pages/admin/GalleryAccess";
 import PortfolioAdmin from "./pages/admin/Portfolio";
 import Inquiries from "./pages/admin/Inquiries";
 
@@ -95,6 +96,15 @@ function Layout() {
           element={
             <ProtectedRoute>
               <GalleryEditor />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/admin/galleries/:galleryId/access"
+          element={
+            <ProtectedRoute>
+              <GalleryAccess />
             </ProtectedRoute>
           }
         />
