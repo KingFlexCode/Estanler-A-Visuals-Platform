@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { useLocation } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 
-const DEFAULT_WATERMARK_TEXT = "Estanler Aleman Photography";
+const BUCKET = "client-galleries";
 const WATERMARK_CLASS = "est-gallery-watermark-overlay";
 
 function isPublicGalleryPage() {
@@ -26,6 +26,12 @@ function isGalleryImageTarget(target) {
   return Boolean(target?.closest?.("img"));
 }
 
+function storageUrl(path) {
+  if (!path) return "";
+  const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
+  return data?.publicUrl || "";
+}
+
 function removeWatermarks() {
   document.querySelectorAll(`.${WATERMARK_CLASS}`).forEach((node) => node.remove());
 }
@@ -42,8 +48,11 @@ function getWatermarkParent(image) {
 
 function styleWatermark(overlay, config) {
   const strong = config.watermarkMode === "strong";
-  const watermarkText = (config.watermarkText || DEFAULT_WATERMARK_TEXT).trim() || DEFAULT_WATERMARK_TEXT;
-  overlay.innerHTML = `<span>${watermarkText}</span>`;
+  const watermarkUrl = storageUrl(config.watermarkFilePath);
+  overlay.innerHTML = "";
+
+  if (!watermarkUrl) return;
+
   Object.assign(overlay.style, {
     position: "absolute",
     inset: "0",
@@ -52,35 +61,31 @@ function styleWatermark(overlay, config) {
     display: "grid",
     placeItems: "center",
     overflow: "hidden",
-    padding: "1rem",
+    padding: strong ? "clamp(1rem, 4vw, 3rem)" : "clamp(1rem, 5vw, 4rem)",
     boxSizing: "border-box",
     userSelect: "none",
   });
 
-  const textNode = overlay.firstElementChild;
-  if (!textNode) return;
-  Object.assign(textNode.style, {
-    color: strong ? "rgba(255,255,255,0.82)" : "rgba(255,255,255,0.58)",
-    background: strong ? "rgba(0,0,0,0.18)" : "rgba(0,0,0,0.08)",
-    border: strong ? "1px solid rgba(255,255,255,0.28)" : "1px solid rgba(255,255,255,0.16)",
-    boxShadow: "0 8px 30px rgba(0,0,0,0.28)",
-    fontFamily: "Inter, Arial, sans-serif",
-    fontSize: strong ? "clamp(1rem, 4.5vw, 3.25rem)" : "clamp(0.85rem, 2.7vw, 1.85rem)",
-    fontWeight: strong ? "900" : "800",
-    letterSpacing: strong ? "0.16em" : "0.12em",
-    lineHeight: "1.2",
-    maxWidth: "92%",
-    padding: strong ? "0.55em 0.8em" : "0.45em 0.7em",
-    textAlign: "center",
-    textShadow: "0 2px 14px rgba(0,0,0,0.9), 0 0 2px rgba(0,0,0,0.95)",
-    textTransform: "uppercase",
-    transform: "rotate(-18deg)",
-    WebkitTextStroke: strong ? "0.7px rgba(0,0,0,0.5)" : "0.45px rgba(0,0,0,0.45)",
+  const image = document.createElement("img");
+  image.src = watermarkUrl;
+  image.alt = "";
+  image.draggable = false;
+  Object.assign(image.style, {
+    display: "block",
+    maxWidth: strong ? "min(58%, 520px)" : "min(42%, 360px)",
+    maxHeight: strong ? "38%" : "28%",
+    objectFit: "contain",
+    opacity: strong ? "0.52" : "0.28",
+    filter: "drop-shadow(0 8px 28px rgba(0,0,0,0.38))",
+    transform: "rotate(-14deg)",
+    userSelect: "none",
   });
+
+  overlay.appendChild(image);
 }
 
 function applyWatermarks(config) {
-  if (!isPublicGalleryPage() || !config || config.watermarkMode === "off") {
+  if (!isPublicGalleryPage() || !config || config.watermarkMode === "off" || !config.watermarkFilePath) {
     removeWatermarks();
     return;
   }
@@ -114,13 +119,13 @@ function normalizeConfig(gallery) {
   return {
     downloadsEnabled: gallery?.allow_downloads !== false,
     watermarkMode: gallery?.watermark_mode || "off",
-    watermarkText: gallery?.watermark_text || gallery?.client_name || DEFAULT_WATERMARK_TEXT,
+    watermarkFilePath: gallery?.watermark_file_path || "",
   };
 }
 
 export default function GalleryImageGuard() {
   const location = useLocation();
-  const configRef = useRef({ downloadsEnabled: true, watermarkMode: "off", watermarkText: DEFAULT_WATERMARK_TEXT });
+  const configRef = useRef({ downloadsEnabled: true, watermarkMode: "off", watermarkFilePath: "" });
   const frameRef = useRef(null);
 
   useEffect(() => {
@@ -137,7 +142,7 @@ export default function GalleryImageGuard() {
 
     async function loadGalleryProtection() {
       if (!slug) {
-        configRef.current = { downloadsEnabled: true, watermarkMode: "off", watermarkText: DEFAULT_WATERMARK_TEXT };
+        configRef.current = { downloadsEnabled: true, watermarkMode: "off", watermarkFilePath: "" };
         removeWatermarks();
         return;
       }
