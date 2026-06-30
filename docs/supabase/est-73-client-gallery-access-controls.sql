@@ -17,6 +17,7 @@ alter table public.client_galleries
   add column if not exists allow_favorites boolean not null default true,
   add column if not exists allow_sharing boolean not null default true,
   add column if not exists watermark_mode text not null default 'off',
+  add column if not exists watermark_file_path text,
   add column if not exists watermark_text text;
 
 alter table public.client_galleries
