@@ -5,9 +5,8 @@ import { COLORS } from "../../lib/constants";
 import { supabase } from "../../lib/supabase";
 import { AdminNav } from "./Dashboard";
 
-const CLIENT_GALLERY_BUCKET = "client-galleries";
-const pageStyle = { minHeight: "100vh", background: COLORS.bg, color: COLORS.white };
 const shellFont = "'Inter', sans-serif";
+const pageStyle = { minHeight: "100vh", background: COLORS.bg, color: COLORS.white };
 const inputStyle = {
   width: "100%",
   boxSizing: "border-box",
@@ -32,7 +31,6 @@ const buttonStyle = {
   textTransform: "uppercase",
 };
 const primaryButtonStyle = { ...buttonStyle, background: COLORS.gold, border: "none", color: COLORS.bg };
-const passwordMask = "••••••••••";
 
 function FieldLabel({ children }) {
   return <span style={{ display: "block", marginBottom: 6, color: COLORS.muted, fontFamily: shellFont, fontSize: 10, fontWeight: 800, letterSpacing: "0.13em", textTransform: "uppercase" }}>{children}</span>;
@@ -52,42 +50,6 @@ function ToggleRow({ title, description, checked, onChange }) {
   );
 }
 
-function PasswordInput({ value, onChange, visible, onToggle, locked }) {
-  return (
-    <div style={{ position: "relative" }}>
-      <input
-        type={visible && !locked ? "text" : "password"}
-        value={locked ? passwordMask : value}
-        readOnly={locked}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder="Enter new gallery password"
-        style={{ ...inputStyle, paddingRight: locked ? 12 : 52, color: locked ? COLORS.muted : COLORS.white, cursor: locked ? "not-allowed" : "text" }}
-      />
-      {!locked && <button
-        type="button"
-        onClick={onToggle}
-        title={visible ? "Hide password" : "Show password"}
-        aria-label={visible ? "Hide password" : "Show password"}
-        style={{
-          position: "absolute",
-          right: 8,
-          top: "50%",
-          transform: "translateY(-50%)",
-          background: "transparent",
-          border: "none",
-          color: COLORS.gold,
-          cursor: "pointer",
-          fontSize: 17,
-          height: 32,
-          width: 32,
-        }}
-      >
-        {visible ? "◉" : "◌"}
-      </button>}
-    </div>
-  );
-}
-
 function formatLocalDateTime(value) {
   if (!value) return "";
   const date = new Date(value);
@@ -97,14 +59,20 @@ function formatLocalDateTime(value) {
   return local.toISOString().slice(0, 16);
 }
 
-function sanitizeFileName(value = "watermark.png") {
-  return value.toLowerCase().replace(/[^a-z0-9.]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || `watermark-${Date.now()}.png`;
-}
-
-function storageUrl(path) {
-  if (!path) return "";
-  const { data } = supabase.storage.from(CLIENT_GALLERY_BUCKET).getPublicUrl(path);
-  return data?.publicUrl || "";
+function PasswordField({ value, onChange, visible, onToggle, locked }) {
+  return (
+    <div style={{ position: "relative" }}>
+      <input
+        type={visible && !locked ? "text" : "password"}
+        value={locked ? "••••••••••" : value}
+        readOnly={locked}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder="Enter new gallery password"
+        style={{ ...inputStyle, paddingRight: locked ? 12 : 52, color: locked ? COLORS.muted : COLORS.white, cursor: locked ? "not-allowed" : "text" }}
+      />
+      {!locked && <button type="button" onClick={onToggle} title={visible ? "Hide password" : "Show password"} aria-label={visible ? "Hide password" : "Show password"} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "transparent", border: "none", color: COLORS.gold, cursor: "pointer", fontSize: 17, height: 32, width: 32 }}>{visible ? "◉" : "◌"}</button>}
+    </div>
+  );
 }
 
 export default function GalleryAccess() {
@@ -116,7 +84,6 @@ export default function GalleryAccess() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [uploadingWatermark, setUploadingWatermark] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
@@ -133,11 +100,7 @@ export default function GalleryAccess() {
   async function loadGallery() {
     setLoading(true);
     setError("");
-    const { data, error: loadError } = await supabase
-      .from("client_galleries")
-      .select("*")
-      .eq("id", galleryId)
-      .single();
+    const { data, error: loadError } = await supabase.from("client_galleries").select("*").eq("id", galleryId).single();
     if (loadError) {
       setError(loadError.message);
       setGallery(null);
@@ -156,59 +119,10 @@ export default function GalleryAccess() {
     setGallery((current) => ({ ...current, [key]: value }));
   }
 
-  async function uploadWatermarkFile(event) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file || !gallery?.id) return;
-
-    const extension = file.name.split(".").pop()?.toLowerCase() || "";
-    const allowed = ["png", "svg", "webp"];
-    if (!allowed.includes(extension)) {
-      setError("Upload a PNG, SVG, or WEBP watermark file.");
-      return;
-    }
-
-    setUploadingWatermark(true);
-    setError("");
-    setNotice("");
-
-    const path = `watermarks/${gallery.id}/${Date.now()}-${sanitizeFileName(file.name)}`;
-    const { error: uploadError } = await supabase.storage
-      .from(CLIENT_GALLERY_BUCKET)
-      .upload(path, file, {
-        cacheControl: "3600",
-        contentType: file.type || (extension === "svg" ? "image/svg+xml" : "image/png"),
-        upsert: true,
-      });
-
-    setUploadingWatermark(false);
-
-    if (uploadError) {
-      setError(uploadError.message);
-      return;
-    }
-
-    setGallery((current) => ({
-      ...current,
-      watermark_file_path: path,
-      watermark_mode: current?.watermark_mode === "off" ? "subtle" : current?.watermark_mode || "subtle",
-      watermark_layout: current?.watermark_layout || "fit",
-      watermark_text: null,
-    }));
-    setNotice("Watermark file uploaded. Save access settings to apply it publicly.");
-  }
-
-  async function removeWatermarkFile() {
-    if (!gallery?.watermark_file_path) return;
-    const confirmed = window.confirm("Remove the watermark file from this gallery?");
-    if (!confirmed) return;
-
-    setUploadingWatermark(true);
-    setError("");
-    await supabase.storage.from(CLIENT_GALLERY_BUCKET).remove([gallery.watermark_file_path]);
-    setUploadingWatermark(false);
-    setGallery((current) => ({ ...current, watermark_file_path: null, watermark_mode: "off", watermark_layout: current?.watermark_layout || "fit", watermark_text: null }));
-    setNotice("Watermark removed. Save access settings to apply this change publicly.");
+  function resetPasswordChange() {
+    setPassword("");
+    setChangingPassword(false);
+    setShowPassword(false);
   }
 
   async function saveAccessSettings() {
@@ -218,10 +132,7 @@ export default function GalleryAccess() {
     setNotice("");
 
     const hasExistingPassword = Boolean(gallery.access_password_hash);
-    const expiresAt = gallery.expires_at ? new Date(gallery.expires_at).toISOString() : null;
     const accessMode = gallery.access_mode || "public";
-    const watermarkMode = gallery.watermark_mode || "off";
-    const watermarkLayout = gallery.watermark_layout || "fit";
     const cleanPassword = password.trim();
 
     if (accessMode === "password" && !hasExistingPassword && !cleanPassword) {
@@ -236,27 +147,15 @@ export default function GalleryAccess() {
       return;
     }
 
-    if (watermarkMode !== "off" && !gallery.watermark_file_path) {
-      setSaving(false);
-      setError("Upload a watermark file or set Watermark Mode to Off.");
-      return;
-    }
-
-    const payload = {
-      access_mode: accessMode,
-      expires_at: expiresAt,
-      allow_downloads: gallery.allow_downloads !== false,
-      allow_favorites: gallery.allow_favorites !== false,
-      allow_sharing: gallery.allow_sharing !== false,
-      watermark_mode: watermarkMode,
-      watermark_layout: watermarkLayout,
-      watermark_file_path: gallery.watermark_file_path || null,
-      watermark_text: null,
-    };
-
     const { data, error: updateError } = await supabase
       .from("client_galleries")
-      .update(payload)
+      .update({
+        access_mode: accessMode,
+        expires_at: gallery.expires_at ? new Date(gallery.expires_at).toISOString() : null,
+        allow_downloads: gallery.allow_downloads !== false,
+        allow_favorites: gallery.allow_favorites !== false,
+        allow_sharing: gallery.allow_sharing !== false,
+      })
       .eq("id", gallery.id)
       .select("*")
       .single();
@@ -269,29 +168,19 @@ export default function GalleryAccess() {
 
     let nextGallery = data;
     if (accessMode === "password" && cleanPassword && (!hasExistingPassword || changingPassword)) {
-      const { data: passwordData, error: passwordError } = await supabase.rpc("set_client_gallery_password", {
-        p_gallery_id: gallery.id,
-        p_password: cleanPassword,
-      });
+      const { data: passwordData, error: passwordError } = await supabase.rpc("set_client_gallery_password", { p_gallery_id: gallery.id, p_password: cleanPassword });
       if (passwordError) {
         setSaving(false);
         setError(passwordError.message);
         return;
       }
       nextGallery = passwordData;
-      setPassword("");
-      setChangingPassword(false);
-      setShowPassword(false);
+      resetPasswordChange();
     }
 
     if (accessMode !== "password") {
-      await supabase.rpc("set_client_gallery_password", {
-        p_gallery_id: gallery.id,
-        p_password: "",
-      });
-      setPassword("");
-      setChangingPassword(false);
-      setShowPassword(false);
+      await supabase.rpc("set_client_gallery_password", { p_gallery_id: gallery.id, p_password: "" });
+      resetPasswordChange();
     }
 
     setGallery(nextGallery);
@@ -303,44 +192,28 @@ export default function GalleryAccess() {
     if (!gallery?.id) return;
     const confirmed = window.confirm("Clear this gallery password? Anyone with the gallery link may lose password access rules until you set a new password.");
     if (!confirmed) return;
-
     setSaving(true);
     setError("");
-    const { data, error: clearError } = await supabase.rpc("set_client_gallery_password", {
-      p_gallery_id: gallery.id,
-      p_password: "",
-    });
+    const { data, error: clearError } = await supabase.rpc("set_client_gallery_password", { p_gallery_id: gallery.id, p_password: "" });
     setSaving(false);
     if (clearError) {
       setError(clearError.message);
       return;
     }
     setGallery(data);
-    setPassword("");
-    setChangingPassword(false);
-    setShowPassword(false);
+    resetPasswordChange();
     setNotice("Gallery password cleared.");
   }
 
   if (loading) return <div style={{ ...pageStyle, display: "grid", placeItems: "center" }}><Spinner /></div>;
 
   if (!gallery) {
-    return (
-      <div style={pageStyle}>
-        <AdminNav onSignOut={handleSignOut} />
-        <main style={{ padding: "2rem clamp(1rem, 3vw, 3rem)" }}>
-          <p style={{ color: "#ff8b8b", fontFamily: shellFont }}>{error || "Gallery not found."}</p>
-          <Link to="/admin/galleries" style={{ color: COLORS.gold, fontFamily: shellFont }}>Back to galleries</Link>
-        </main>
-      </div>
-    );
+    return <div style={pageStyle}><AdminNav onSignOut={handleSignOut} /><main style={{ padding: "2rem clamp(1rem, 3vw, 3rem)" }}><p style={{ color: "#ff8b8b", fontFamily: shellFont }}>{error || "Gallery not found."}</p><Link to="/admin/galleries" style={{ color: COLORS.gold, fontFamily: shellFont }}>Back to galleries</Link></main></div>;
   }
 
   const publicUrl = gallery.slug ? `${window.location.origin}/gallery/${gallery.slug}` : "Save the gallery slug first.";
   const hasExistingPassword = Boolean(gallery.access_password_hash);
   const passwordInputLocked = hasExistingPassword && !changingPassword;
-  const watermarkPreviewUrl = storageUrl(gallery.watermark_file_path);
-  const hasWatermarkAsset = Boolean(gallery.watermark_file_path);
 
   return (
     <div style={pageStyle}>
@@ -364,26 +237,16 @@ export default function GalleryAccess() {
           <div style={{ display: "grid", gap: "1rem" }}>
             <div style={{ border: `1px solid ${COLORS.border}`, background: "rgba(255,255,255,0.025)", padding: "1rem" }}>
               <h2 style={{ fontFamily: shellFont, fontSize: 16, margin: "0 0 1rem" }}>Privacy</h2>
-              <label>
-                <FieldLabel>Access Mode</FieldLabel>
-                <select value={gallery.access_mode || "public"} onChange={(event) => setField("access_mode", event.target.value)} style={inputStyle}>
-                  <option value="public">Public</option>
-                  <option value="password">Password Protected</option>
-                  <option value="hidden">Hidden</option>
-                </select>
-              </label>
+              <label><FieldLabel>Access Mode</FieldLabel><select value={gallery.access_mode || "public"} onChange={(event) => setField("access_mode", event.target.value)} style={inputStyle}><option value="public">Public</option><option value="password">Password Protected</option><option value="hidden">Hidden</option></select></label>
               <p style={{ color: COLORS.muted, fontFamily: shellFont, fontSize: 12, lineHeight: 1.7, margin: "0.85rem 0 0" }}>Public galleries open with the link. Password-protected galleries require a password. Hidden galleries stay unavailable publicly even if published.</p>
             </div>
 
             {gallery.access_mode === "password" && <div style={{ border: `1px solid ${COLORS.border}`, background: "rgba(255,255,255,0.025)", padding: "1rem" }}>
               <h2 style={{ fontFamily: shellFont, fontSize: 16, margin: "0 0 1rem" }}>Password</h2>
-              <label>
-                <FieldLabel>{hasExistingPassword ? (changingPassword ? "New Password" : "Password Set") : "Set Password"}</FieldLabel>
-                <PasswordInput value={password} onChange={setPassword} visible={showPassword} onToggle={() => setShowPassword((visible) => !visible)} locked={passwordInputLocked} />
-              </label>
+              <label><FieldLabel>{hasExistingPassword ? (changingPassword ? "New Password" : "Password Set") : "Set Password"}</FieldLabel><PasswordField value={password} onChange={setPassword} visible={showPassword} onToggle={() => setShowPassword((visible) => !visible)} locked={passwordInputLocked} /></label>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: "0.85rem", flexWrap: "wrap" }}>
                 {hasExistingPassword && !changingPassword && <button type="button" onClick={() => { setChangingPassword(true); setPassword(""); setShowPassword(false); }} disabled={saving} style={{ ...buttonStyle, color: COLORS.gold }}>Change Password</button>}
-                {hasExistingPassword && changingPassword && <button type="button" onClick={() => { setChangingPassword(false); setPassword(""); setShowPassword(false); setError(""); }} disabled={saving} style={buttonStyle}>Cancel Change</button>}
+                {hasExistingPassword && changingPassword && <button type="button" onClick={() => { resetPasswordChange(); setError(""); }} disabled={saving} style={buttonStyle}>Cancel Change</button>}
                 <button type="button" onClick={clearPassword} disabled={saving || !hasExistingPassword} style={{ ...buttonStyle, color: "#ffb4b4", borderColor: "rgba(255,180,180,0.45)", opacity: saving || !hasExistingPassword ? 0.55 : 1 }}>Clear Password</button>
                 {hasExistingPassword && !changingPassword && <span style={{ color: COLORS.gold, fontFamily: shellFont, fontSize: 12 }}>A password is currently active.</span>}
                 {hasExistingPassword && changingPassword && <span style={{ color: COLORS.gold, fontFamily: shellFont, fontSize: 12 }}>Enter a new password, then save to replace the current one.</span>}
@@ -393,10 +256,7 @@ export default function GalleryAccess() {
 
             <div style={{ border: `1px solid ${COLORS.border}`, background: "rgba(255,255,255,0.025)", padding: "1rem" }}>
               <h2 style={{ fontFamily: shellFont, fontSize: 16, margin: "0 0 1rem" }}>Expiration</h2>
-              <label>
-                <FieldLabel>Expires At</FieldLabel>
-                <input type="datetime-local" value={formatLocalDateTime(gallery.expires_at)} onChange={(event) => setField("expires_at", event.target.value ? new Date(event.target.value).toISOString() : null)} style={inputStyle} />
-              </label>
+              <label><FieldLabel>Expires At</FieldLabel><input type="datetime-local" value={formatLocalDateTime(gallery.expires_at)} onChange={(event) => setField("expires_at", event.target.value ? new Date(event.target.value).toISOString() : null)} style={inputStyle} /></label>
               <button type="button" onClick={() => setField("expires_at", null)} style={{ ...buttonStyle, marginTop: "0.85rem" }}>Clear Expiration</button>
             </div>
 
@@ -407,63 +267,15 @@ export default function GalleryAccess() {
               <ToggleRow title="Allow sharing" description="Controls share buttons and the share modal." checked={gallery.allow_sharing !== false} onChange={(value) => setField("allow_sharing", value)} />
             </div>
 
-            <div style={{ border: `1px solid ${COLORS.border}`, background: "rgba(255,255,255,0.025)", padding: "1rem", display: "grid", gap: "1rem" }}>
-              <div>
-                <h2 style={{ fontFamily: shellFont, fontSize: 16, margin: "0 0 0.35rem" }}>Watermark</h2>
-                <p style={{ color: COLORS.muted, fontFamily: shellFont, fontSize: 12, lineHeight: 1.7, margin: 0 }}>Upload a transparent PNG, SVG, or WEBP watermark file. Fit uses one centered watermark. Tile repeats the watermark across the entire image.</p>
-              </div>
-              <label>
-                <FieldLabel>Watermark Mode</FieldLabel>
-                <select value={gallery.watermark_mode || "off"} onChange={(event) => setField("watermark_mode", event.target.value)} style={inputStyle}>
-                  <option value="off">Off</option>
-                  <option value="subtle">Subtle</option>
-                  <option value="strong">Strong</option>
-                </select>
-              </label>
-              <label>
-                <FieldLabel>Watermark Layout</FieldLabel>
-                <select value={gallery.watermark_layout || "fit"} onChange={(event) => setField("watermark_layout", event.target.value)} style={inputStyle}>
-                  <option value="fit">Fit Image</option>
-                  <option value="tile">Tile Entire Image</option>
-                </select>
-              </label>
-              <div>
-                <FieldLabel>Watermark File</FieldLabel>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <label style={{ ...buttonStyle, display: "inline-block", opacity: uploadingWatermark ? 0.6 : 1, cursor: uploadingWatermark ? "not-allowed" : "pointer" }}>
-                    {uploadingWatermark ? "Uploading..." : hasWatermarkAsset ? "Replace File" : "Upload File"}
-                    <input type="file" accept="image/png,image/svg+xml,image/webp" onChange={uploadWatermarkFile} disabled={uploadingWatermark} style={{ display: "none" }} />
-                  </label>
-                  <button type="button" onClick={removeWatermarkFile} disabled={uploadingWatermark || !hasWatermarkAsset} style={{ ...buttonStyle, color: "#ffb4b4", borderColor: "rgba(255,180,180,0.45)", opacity: uploadingWatermark || !hasWatermarkAsset ? 0.55 : 1 }}>Remove File</button>
-                </div>
-                {hasWatermarkAsset && <div style={{ marginTop: "1rem", border: `1px solid ${COLORS.border}`, background: "rgba(255,255,255,0.04)", padding: "1rem", display: "grid", gap: "0.75rem" }}>
-                  <img src={watermarkPreviewUrl} alt="Current watermark preview" style={{ maxWidth: 260, maxHeight: 120, objectFit: "contain", justifySelf: "start", background: "rgba(0,0,0,0.35)", padding: "0.75rem" }} />
-                  <span style={{ color: COLORS.muted, fontFamily: shellFont, fontSize: 12, overflowWrap: "anywhere" }}>{gallery.watermark_file_path}</span>
-                </div>}
-              </div>
-            </div>
-
-            <button type="button" onClick={saveAccessSettings} disabled={saving || uploadingWatermark} style={{ ...primaryButtonStyle, opacity: saving || uploadingWatermark ? 0.6 : 1 }}>{saving ? "Saving..." : "Save Access Settings"}</button>
+            <button type="button" onClick={saveAccessSettings} disabled={saving} style={{ ...primaryButtonStyle, opacity: saving ? 0.6 : 1 }}>{saving ? "Saving..." : "Save Access Settings"}</button>
           </div>
 
           <aside style={{ border: `1px solid ${COLORS.border}`, background: "rgba(255,255,255,0.025)", padding: "1rem", position: "sticky", top: 90 }}>
             <h2 style={{ fontFamily: shellFont, fontSize: 16, margin: "0 0 1rem" }}>Current Delivery State</h2>
             <div style={{ display: "grid", gap: 10, color: COLORS.muted, fontFamily: shellFont, fontSize: 13, lineHeight: 1.6 }}>
-              <div><strong style={{ color: COLORS.white }}>Status:</strong> {gallery.status}</div>
-              <div><strong style={{ color: COLORS.white }}>Access:</strong> {gallery.access_mode || "public"}</div>
-              <div><strong style={{ color: COLORS.white }}>Password:</strong> {hasExistingPassword ? "Set" : "Not set"}</div>
-              <div><strong style={{ color: COLORS.white }}>Expires:</strong> {gallery.expires_at ? new Date(gallery.expires_at).toLocaleString() : "No expiration"}</div>
-              <div><strong style={{ color: COLORS.white }}>Downloads:</strong> {gallery.allow_downloads !== false ? "On" : "Off"}</div>
-              <div><strong style={{ color: COLORS.white }}>Favorites:</strong> {gallery.allow_favorites !== false ? "On" : "Off"}</div>
-              <div><strong style={{ color: COLORS.white }}>Sharing:</strong> {gallery.allow_sharing !== false ? "On" : "Off"}</div>
-              <div><strong style={{ color: COLORS.white }}>Watermark:</strong> {gallery.watermark_mode || "off"}</div>
-              <div><strong style={{ color: COLORS.white }}>Watermark Layout:</strong> {gallery.watermark_layout || "fit"}</div>
-              <div><strong style={{ color: COLORS.white }}>Watermark File:</strong> {hasWatermarkAsset ? "Set" : "Not set"}</div>
+              <div><strong style={{ color: COLORS.white }}>Status:</strong> {gallery.status}</div><div><strong style={{ color: COLORS.white }}>Access:</strong> {gallery.access_mode || "public"}</div><div><strong style={{ color: COLORS.white }}>Password:</strong> {hasExistingPassword ? "Set" : "Not set"}</div><div><strong style={{ color: COLORS.white }}>Expires:</strong> {gallery.expires_at ? new Date(gallery.expires_at).toLocaleString() : "No expiration"}</div><div><strong style={{ color: COLORS.white }}>Downloads:</strong> {gallery.allow_downloads !== false ? "On" : "Off"}</div><div><strong style={{ color: COLORS.white }}>Favorites:</strong> {gallery.allow_favorites !== false ? "On" : "Off"}</div><div><strong style={{ color: COLORS.white }}>Sharing:</strong> {gallery.allow_sharing !== false ? "On" : "Off"}</div>
             </div>
-            <div style={{ marginTop: "1rem" }}>
-              <FieldLabel>Share Link</FieldLabel>
-              <input value={publicUrl} readOnly style={inputStyle} />
-            </div>
+            <div style={{ marginTop: "1rem" }}><FieldLabel>Share Link</FieldLabel><input value={publicUrl} readOnly style={inputStyle} /></div>
           </aside>
         </section>
       </main>
