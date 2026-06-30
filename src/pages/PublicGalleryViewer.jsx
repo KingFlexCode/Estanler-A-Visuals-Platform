@@ -58,6 +58,10 @@ function sanitizeFileName(value = "file") {
     .replace(/^-|-$/g, "") || "file";
 }
 
+function unlockStorageKey(slug = "") {
+  return slug ? `client-gallery-unlock:${slug}` : "";
+}
+
 function typography(style = "classic") {
   const map = {
     classic: { family: displayFont, weight: 600, spacing: "0.02em", transform: "none" },
@@ -138,6 +142,7 @@ export default function PublicGalleryViewer() {
   const [downloadModalOpen, setDownloadModalOpen] = useState(false);
   const [passwordInput, setPasswordInput] = useState("");
   const [passwordError, setPasswordError] = useState("");
+  const [showUnlockPassword, setShowUnlockPassword] = useState(false);
   const [unlocking, setUnlocking] = useState(false);
   const [downloadState, setDownloadState] = useState({ busy: false, progress: 0, total: 0, currentFile: "", status: "idle", message: "" });
 
@@ -158,7 +163,8 @@ export default function PublicGalleryViewer() {
     return `${window.location.origin}/gallery/${slug || gallery?.slug || ""}`;
   }, [gallery?.slug, slug]);
 
-  const loadGallery = useCallback(async (password = null) => {
+  const loadGallery = useCallback(async (password = null, options = {}) => {
+    const { showError = false } = options;
     setError("");
     const { data, error: payloadError } = await supabase.rpc("get_client_gallery_public_payload", {
       p_slug: slug,
@@ -177,23 +183,32 @@ export default function PublicGalleryViewer() {
     setPhotos(data?.photos || []);
 
     if (nextState === "available") {
+      if (password && typeof window !== "undefined") window.sessionStorage.setItem(unlockStorageKey(slug), password);
+      setPasswordInput("");
       setPasswordError("");
+      setShowUnlockPassword(false);
       setStatus("view");
       return;
     }
     if (nextState === "locked") {
+      if (password && typeof window !== "undefined") window.sessionStorage.removeItem(unlockStorageKey(slug));
       setStatus("locked");
-      if (password) setPasswordError("That password did not work. Please try again.");
+      setPasswordError(password && showError ? "That password did not work. Please try again." : "");
       return;
     }
     if (nextState === "expired") {
+      if (typeof window !== "undefined") window.sessionStorage.removeItem(unlockStorageKey(slug));
       setStatus("expired");
       return;
     }
+    if (typeof window !== "undefined") window.sessionStorage.removeItem(unlockStorageKey(slug));
     setStatus("notfound");
   }, [slug]);
 
-  useEffect(() => { loadGallery(); }, [loadGallery]);
+  useEffect(() => {
+    const savedPassword = typeof window !== "undefined" ? window.sessionStorage.getItem(unlockStorageKey(slug)) : "";
+    loadGallery(savedPassword || null, { showError: false });
+  }, [loadGallery, slug]);
 
   useEffect(() => {
     if (!notice || downloadState.busy) return undefined;
@@ -236,7 +251,7 @@ export default function PublicGalleryViewer() {
       return;
     }
     setUnlocking(true);
-    await loadGallery(passwordInput);
+    await loadGallery(passwordInput, { showError: true });
     setUnlocking(false);
   };
 
@@ -393,7 +408,10 @@ export default function PublicGalleryViewer() {
     return (
       <AccessState title={gallery?.title || "Locked Gallery"} message="This gallery is password protected. Enter the password to view the photos.">
         <form onSubmit={submitPassword} style={{ display: "grid", gap: "0.85rem", margin: "0 auto", maxWidth: 360 }}>
-          <input type="password" value={passwordInput} onChange={(event) => { setPasswordInput(event.target.value); setPasswordError(""); }} placeholder="Gallery password" style={{ background: "rgba(255,255,255,0.06)", border: `1px solid ${COLORS.border}`, color: COLORS.white, fontFamily: shellFont, fontSize: 14, outline: "none", padding: "0.95rem 1rem" }} />
+          <div style={{ position: "relative" }}>
+            <input type={showUnlockPassword ? "text" : "password"} value={passwordInput} onChange={(event) => { setPasswordInput(event.target.value); setPasswordError(""); }} placeholder="Gallery password" style={{ background: "rgba(255,255,255,0.06)", border: `1px solid ${COLORS.border}`, color: COLORS.white, fontFamily: shellFont, fontSize: 14, outline: "none", padding: "0.95rem 3.2rem 0.95rem 1rem", width: "100%", boxSizing: "border-box" }} />
+            <button type="button" onClick={() => setShowUnlockPassword((visible) => !visible)} title={showUnlockPassword ? "Hide password" : "Show password"} aria-label={showUnlockPassword ? "Hide password" : "Show password"} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "transparent", border: "none", color: COLORS.gold, cursor: "pointer", fontSize: 18, height: 34, width: 34 }}>{showUnlockPassword ? "◉" : "◌"}</button>
+          </div>
           {passwordError && <div style={{ color: "#ff8b8b", fontFamily: shellFont, fontSize: 12 }}>{passwordError}</div>}
           <button type="submit" disabled={unlocking} style={{ background: COLORS.gold, border: "none", color: COLORS.bg, cursor: unlocking ? "not-allowed" : "pointer", fontFamily: shellFont, fontSize: 11, fontWeight: 900, letterSpacing: "0.16em", opacity: unlocking ? 0.6 : 1, padding: "1rem 1.2rem", textTransform: "uppercase" }}>{unlocking ? "Checking..." : "Unlock Gallery"}</button>
         </form>
