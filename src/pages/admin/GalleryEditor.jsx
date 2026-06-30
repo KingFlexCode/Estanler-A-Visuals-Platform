@@ -183,6 +183,20 @@ function FieldLabel({ children }) {
 function TextField({ label, value, onChange, type = "text", placeholder = "" }) {
   return <label><FieldLabel>{label}</FieldLabel><input type={type} value={value || ""} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} style={inputStyle} /></label>;
 }
+function ToggleRow({ title, description, checked, onChange }) {
+  return <button type="button" onClick={() => onChange(!checked)} style={{ ...buttonStyle, display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", padding: "0.9rem", textAlign: "left", textTransform: "none", letterSpacing: 0 }}><span><strong style={{ color: COLORS.white, display: "block", fontSize: 13 }}>{title}</strong><span style={{ color: COLORS.muted, display: "block", fontSize: 12, lineHeight: 1.55, marginTop: 4 }}>{description}</span></span><span style={{ width: 44, height: 24, borderRadius: 999, background: checked ? COLORS.gold : "rgba(255,255,255,0.12)", position: "relative", flex: "0 0 auto" }}><span style={{ position: "absolute", top: 4, left: checked ? 24 : 4, width: 16, height: 16, borderRadius: "50%", background: checked ? COLORS.bg : COLORS.white, transition: "left 0.18s ease" }} /></span></button>;
+}
+function PasswordField({ value, onChange, visible, onToggle, locked }) {
+  return <div style={{ position: "relative" }}><input type={visible && !locked ? "text" : "password"} value={locked ? "••••••••••" : value} readOnly={locked} onChange={(event) => onChange(event.target.value)} placeholder="Enter gallery password" style={{ ...inputStyle, paddingRight: locked ? 12 : 52, color: locked ? COLORS.muted : COLORS.white, cursor: locked ? "not-allowed" : "text" }} />{!locked && <button type="button" onClick={onToggle} title={visible ? "Hide password" : "Show password"} aria-label={visible ? "Hide password" : "Show password"} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "transparent", border: "none", color: COLORS.gold, cursor: "pointer", fontSize: 17, height: 32, width: 32 }}>{visible ? "◉" : "◌"}</button>}</div>;
+}
+function formatLocalDateTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const offset = date.getTimezoneOffset();
+  const local = new Date(date.getTime() - offset * 60000);
+  return local.toISOString().slice(0, 16);
+}
 function StatusPill({ status, onClick }) {
   const published = status === "published";
   const color = published ? "#4ade80" : status === "archived" ? COLORS.muted : COLORS.gold;
@@ -285,6 +299,9 @@ export default function GalleryEditor() {
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [deleteModalError, setDeleteModalError] = useState("");
   const [deleting, setDeleting] = useState(false);
+  const [password, setPassword] = useState("");
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const coverPhoto = useMemo(() => photos.find((photo) => photo.id === gallery?.cover_image_id) || photos[0] || null, [gallery?.cover_image_id, photos]);
   const activeSection = useMemo(() => sections.find((section) => section.id === targetSection) || sections[0] || null, [sections, targetSection]);
@@ -320,7 +337,7 @@ export default function GalleryEditor() {
       supabase.from("client_gallery_sections").select("*").eq("gallery_id", galleryId).order("display_order", { ascending: true }),
       supabase.from("client_gallery_images").select("*").eq("gallery_id", galleryId).order("display_order", { ascending: true }),
     ]);
-    if (galleryResult.error) { setError(galleryResult.error.message); setGallery(null); } else setGallery(galleryResult.data);
+    if (galleryResult.error) { setError(galleryResult.error.message); setGallery(null); } else { setGallery(galleryResult.data); setPassword(""); setChangingPassword(false); setShowPassword(false); }
     if (sectionResult.error) { setError(sectionResult.error.message); setSections([]); } else { const nextSections = sectionResult.data || []; setSections(nextSections); setTargetSection((current) => current || nextSections[0]?.id || ""); }
     if (photoResult.error) { setError(photoResult.error.message); setPhotos([]); } else setPhotos(photoResult.data || []);
     setLoading(false);
@@ -329,6 +346,7 @@ export default function GalleryEditor() {
   const handleSignOut = async () => { await supabase.auth.signOut(); navigate("/admin/login"); };
   const flash = (message) => { setNotice(message); setError(""); };
   const setGalleryField = (key, value) => setGallery((current) => ({ ...current, [key]: value }));
+  function resetPasswordChange() { setPassword(""); setChangingPassword(false); setShowPassword(false); }
   const updateQueueItem = (index, patch) => setUploadQueue((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)));
   function closeWorkspaceMenus() { setContextMenu(null); setActionMenuOpen(false); setSortMenuOpen(false); setGridMenuOpen(false); }
   function openDeleteModal(type, record) { setDeleteTarget({ type, record }); setDeleteConfirmText(""); setDeleteModalError(""); closeWorkspaceMenus(); }
@@ -346,13 +364,35 @@ export default function GalleryEditor() {
 
   async function saveGallery() {
     if (!gallery?.title?.trim()) { setError("Gallery title is required."); return; }
+    const accessMode = gallery.access_mode || "public";
+    const cleanPassword = password.trim();
+    const hasExistingPassword = Boolean(gallery.access_password_hash);
+    if (accessMode === "password" && !hasExistingPassword && !cleanPassword) { setError("Enter a password before saving password-protected access."); return; }
+    if (accessMode === "password" && changingPassword && !cleanPassword) { setError("Enter the new password before saving the password change."); return; }
     setSaving(true);
-    const payload = { title: gallery.title.trim(), slug: slugify(gallery.slug || gallery.title), client_name: gallery.client_name || null, client_email: gallery.client_email || null, event_date: gallery.event_date || null, description: gallery.description || null, status: gallery.status || "draft", cover_image_id: gallery.cover_image_id || null, cover_style: gallery.cover_style || "center", theme_color: gallery.theme_color || "#C8A96A", grid_style: gallery.grid_style || "masonry", typography_style: gallery.typography_style || "classic", cover_focal_x: Number(gallery.cover_focal_x ?? 50), cover_focal_y: Number(gallery.cover_focal_y ?? 50) };
+    setError("");
+    const payload = { title: gallery.title.trim(), slug: slugify(gallery.slug || gallery.title), client_name: gallery.client_name || null, client_email: gallery.client_email || null, event_date: gallery.event_date || null, description: gallery.description || null, status: gallery.status || "draft", cover_image_id: gallery.cover_image_id || null, cover_style: gallery.cover_style || "center", theme_color: gallery.theme_color || "#C8A96A", grid_style: gallery.grid_style || "masonry", typography_style: gallery.typography_style || "classic", cover_focal_x: Number(gallery.cover_focal_x ?? 50), cover_focal_y: Number(gallery.cover_focal_y ?? 50), access_mode: accessMode, expires_at: gallery.expires_at ? new Date(gallery.expires_at).toISOString() : null, allow_downloads: gallery.allow_downloads !== false, allow_favorites: gallery.allow_favorites !== false, allow_sharing: gallery.allow_sharing !== false };
     const { data, error: updateError } = await supabase.from("client_galleries").update(payload).eq("id", gallery.id).select("*").single();
+    if (updateError) { setSaving(false); setError(updateError.message); return; }
+    let nextGallery = data;
+    if (accessMode === "password" && cleanPassword && (!hasExistingPassword || changingPassword)) {
+      const { data: passwordData, error: passwordError } = await supabase.rpc("set_client_gallery_password", { p_gallery_id: gallery.id, p_password: cleanPassword });
+      if (passwordError) { setSaving(false); setError(passwordError.message); return; }
+      nextGallery = passwordData;
+      resetPasswordChange();
+    }
+    if (accessMode !== "password" && hasExistingPassword) {
+      const { data: clearedGallery, error: clearError } = await supabase.rpc("set_client_gallery_password", { p_gallery_id: gallery.id, p_password: "" });
+      if (clearError) { setSaving(false); setError(clearError.message); return; }
+      nextGallery = clearedGallery;
+      resetPasswordChange();
+    }
+    setGallery(nextGallery);
     setSaving(false);
-    if (updateError) setError(updateError.message); else { setGallery(data); flash("Gallery workspace saved."); }
+    flash("Gallery workspace saved.");
   }
   async function toggleGalleryVisibility() { const nextStatus = gallery.status === "published" ? "draft" : "published"; const { data, error: updateError } = await supabase.from("client_galleries").update({ status: nextStatus }).eq("id", gallery.id).select("*").single(); if (updateError) setError(updateError.message); else { setGallery(data); flash(nextStatus === "published" ? "Gallery is now published." : "Gallery is now hidden."); } }
+  async function clearGalleryPassword() { if (!gallery?.id || !gallery.access_password_hash) return; const ok = window.confirm("Clear this gallery password? The gallery will return to public access unless you choose another access mode before saving."); if (!ok) return; setSaving(true); setError(""); const { data, error: clearError } = await supabase.rpc("set_client_gallery_password", { p_gallery_id: gallery.id, p_password: "" }); setSaving(false); if (clearError) { setError(clearError.message); return; } setGallery(data); resetPasswordChange(); flash("Gallery password cleared."); }
   async function deleteGallery() { const { error: deleteError } = await supabase.from("client_galleries").delete().eq("id", gallery.id); if (deleteError) { setNotice(""); setError(deleteError.message); return false; } navigate("/admin/galleries"); return true; }
   async function addSection() { const title = newSection.trim(); if (!title) return; const displayOrder = sections.length ? Math.max(...sections.map((section) => section.display_order || 0)) + 1 : 0; const slug = getUniqueSlug(slugify(title), sections); const { data, error: insertError } = await supabase.from("client_gallery_sections").insert({ gallery_id: galleryId, title, slug, display_order: displayOrder, is_visible: true }).select("*").single(); if (insertError) { setNotice(""); setError(insertError.message); return; } setSections((current) => sortByOrder([...current, data])); setTargetSection(data.id); setMoveTargetSectionId(data.id); setNewSection(""); setSelectedPhotoIds([]); setSelectionAnchorId(null); flash("Photo set added."); }
   async function saveSection(section, updates = {}, options = {}) { const nextTitle = section.title || "Untitled Set"; const nextSlug = section.slug || getUniqueSlug(slugify(nextTitle), sections.filter((item) => item.id !== section.id)); const { data, error: updateError } = await supabase.from("client_gallery_sections").update({ title: nextTitle, slug: nextSlug, is_visible: section.is_visible !== false, ...updates }).eq("id", section.id).select("*").single(); if (updateError) { setNotice(""); setError(updateError.message); } else { setSections((current) => current.map((item) => (item.id === section.id ? data : item))); if (!options.silent) flash("Photo set updated."); } }
@@ -451,7 +491,59 @@ export default function GalleryEditor() {
     const renderGridSection = () => <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}><h3 style={{ color: COLORS.white, fontFamily: "'Inter', sans-serif", fontSize: 16, margin: 0 }}>Grid</h3><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>{GRID_STYLES.map((style) => { const active = (gallery.grid_style || "masonry") === style; return <button key={style} type="button" onClick={() => setGalleryField("grid_style", style)} style={{ background: active ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.025)", border: `1px solid ${active ? COLORS.gold : COLORS.border}`, color: active ? COLORS.gold : COLORS.white, cursor: "pointer", minHeight: 92, padding: "0.75rem" }}><div style={{ display: "grid", gridTemplateColumns: style === "horizontal" ? "1fr 1fr" : "repeat(3, 1fr)", gap: 4, height: 42, marginBottom: 8 }}>{Array.from({ length: style === "filmstrip" ? 5 : 6 }).map((_, index) => <span key={index} style={{ background: "currentColor", opacity: 0.9, gridColumn: style === "mosaic" && index === 0 ? "span 2" : "span 1", gridRow: style === "mosaic" && index === 0 ? "span 2" : "span 1" }} />)}</div><span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 800 }}>{labelizeOption(style)}</span></button>; })}</div></div>;
     return <div style={{ display: "grid", gridTemplateColumns: "96px minmax(0, 1fr)", gap: "1rem", paddingBottom: "2rem" }}><nav style={{ display: "flex", flexDirection: "column", gap: 6 }}>{DESIGN_SECTIONS.map((section) => <button key={section.id} type="button" onClick={() => setDesignSection(section.id)} style={{ background: designSection === section.id ? "rgba(255,255,255,0.08)" : "transparent", border: `1px solid ${designSection === section.id ? COLORS.gold : "transparent"}`, color: designSection === section.id ? COLORS.white : COLORS.muted, cursor: "pointer", fontFamily: "'Inter', sans-serif", fontSize: 11, padding: "0.75rem 0.45rem", textAlign: "center" }}><div style={{ fontSize: 18, marginBottom: 6 }}>{section.icon}</div>{section.label}</button>)}</nav><div>{designSection === "cover" && renderCoverSection()}{designSection === "typography" && renderTypographySection()}{designSection === "color" && renderColorSection()}{designSection === "grid" && renderGridSection()}</div></div>;
   }
-  function renderSettingsPanel() { return <div style={{ display: "flex", flexDirection: "column", gap: "1rem", paddingBottom: "2rem" }}><TextField label="Gallery Title" value={gallery.title} onChange={(value) => setGalleryField("title", value)} /><TextField label="URL Slug" value={gallery.slug} onChange={(value) => setGalleryField("slug", slugify(value))} /><label><FieldLabel>Status</FieldLabel><select value={gallery.status || "draft"} onChange={(event) => setGalleryField("status", event.target.value)} style={inputStyle}>{STATUS_OPTIONS.map((status) => <option key={status} value={status}>{status.charAt(0).toUpperCase() + status.slice(1)}</option>)}</select></label><button type="button" onClick={toggleGalleryVisibility} style={gallery.status === "published" ? buttonStyle : primaryButtonStyle}>{gallery.status === "published" ? "Hide Gallery" : "Publish Gallery"}</button><TextField label="Client Name" value={gallery.client_name} onChange={(value) => setGalleryField("client_name", value)} /><TextField label="Client Email" type="email" value={gallery.client_email} onChange={(value) => setGalleryField("client_email", value)} /><TextField label="Event Date" type="date" value={gallery.event_date} onChange={(value) => setGalleryField("event_date", value)} /><label><FieldLabel>Description</FieldLabel><textarea value={gallery.description || ""} onChange={(event) => setGalleryField("description", event.target.value)} rows={5} style={{ ...inputStyle, resize: "vertical" }} /></label>{["Privacy", "Download", "Favorites"].map((setting) => <div key={setting} style={{ border: `1px solid ${COLORS.border}`, color: COLORS.muted, fontFamily: "'Inter', sans-serif", fontSize: 12, lineHeight: 1.6, padding: "0.85rem" }}><strong style={{ color: COLORS.white }}>{setting}</strong><br />Coming in the related access, download, and favorites issues.</div>)}<button type="button" onClick={() => openDeleteModal("gallery", gallery)} style={{ ...buttonStyle, color: "#ff8b8b", borderColor: "rgba(255,139,139,0.45)" }}>Delete Gallery</button></div>; }
+  function renderSettingsPanel() {
+    const hasExistingPassword = Boolean(gallery.access_password_hash);
+    const passwordInputLocked = hasExistingPassword && !changingPassword;
+    return <div style={{ display: "flex", flexDirection: "column", gap: "1rem", paddingBottom: "2rem" }}>
+      <section style={{ border: `1px solid ${COLORS.border}`, background: "rgba(255,255,255,0.025)", padding: "0.9rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+        <h3 style={{ color: COLORS.white, fontFamily: "'Inter', sans-serif", fontSize: 15, margin: 0 }}>Gallery Details</h3>
+        <TextField label="Gallery Title" value={gallery.title} onChange={(value) => setGalleryField("title", value)} />
+        <TextField label="URL Slug" value={gallery.slug} onChange={(value) => setGalleryField("slug", slugify(value))} />
+        <label><FieldLabel>Status</FieldLabel><select value={gallery.status || "draft"} onChange={(event) => setGalleryField("status", event.target.value)} style={inputStyle}>{STATUS_OPTIONS.map((status) => <option key={status} value={status}>{status.charAt(0).toUpperCase() + status.slice(1)}</option>)}</select></label>
+        <button type="button" onClick={toggleGalleryVisibility} style={gallery.status === "published" ? buttonStyle : primaryButtonStyle}>{gallery.status === "published" ? "Hide Gallery" : "Publish Gallery"}</button>
+        <TextField label="Client Name" value={gallery.client_name} onChange={(value) => setGalleryField("client_name", value)} />
+        <TextField label="Client Email" type="email" value={gallery.client_email} onChange={(value) => setGalleryField("client_email", value)} />
+        <TextField label="Event Date" type="date" value={gallery.event_date} onChange={(value) => setGalleryField("event_date", value)} />
+        <label><FieldLabel>Description</FieldLabel><textarea value={gallery.description || ""} onChange={(event) => setGalleryField("description", event.target.value)} rows={5} style={{ ...inputStyle, resize: "vertical" }} /></label>
+      </section>
+      <section style={{ border: `1px solid ${COLORS.border}`, background: "rgba(255,255,255,0.025)", padding: "0.9rem", display: "flex", flexDirection: "column", gap: "0.9rem" }}>
+        <h3 style={{ color: COLORS.white, fontFamily: "'Inter', sans-serif", fontSize: 15, margin: 0 }}>Access Settings</h3>
+        <label><FieldLabel>Access Mode</FieldLabel><select value={gallery.access_mode || "public"} onChange={(event) => setGalleryField("access_mode", event.target.value)} style={inputStyle}><option value="public">Public</option><option value="password">Password Protected</option><option value="hidden">Hidden</option></select></label>
+        <p style={{ color: COLORS.muted, fontFamily: "'Inter', sans-serif", fontSize: 12, lineHeight: 1.6, margin: 0 }}>Public galleries open with the link. Password-protected galleries require a password. Hidden galleries stay unavailable publicly even if published.</p>
+        {(gallery.access_mode || "public") === "password" && <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+          <label><FieldLabel>{hasExistingPassword ? (changingPassword ? "New Password" : "Password Set") : "Set Password"}</FieldLabel><PasswordField value={password} onChange={setPassword} visible={showPassword} onToggle={() => setShowPassword((visible) => !visible)} locked={passwordInputLocked} /></label>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            {hasExistingPassword && !changingPassword && <button type="button" onClick={() => { setChangingPassword(true); setPassword(""); setShowPassword(false); }} disabled={saving} style={{ ...buttonStyle, color: COLORS.gold }}>Change Password</button>}
+            {hasExistingPassword && changingPassword && <button type="button" onClick={() => { resetPasswordChange(); setError(""); }} disabled={saving} style={buttonStyle}>Cancel Change</button>}
+            <button type="button" onClick={clearGalleryPassword} disabled={saving || !hasExistingPassword} style={{ ...buttonStyle, color: "#ffb4b4", borderColor: "rgba(255,180,180,0.45)", opacity: saving || !hasExistingPassword ? 0.55 : 1 }}>Clear Password</button>
+          </div>
+          <p style={{ color: COLORS.muted, fontFamily: "'Inter', sans-serif", fontSize: 12, lineHeight: 1.6, margin: 0 }}>{hasExistingPassword && !changingPassword ? "A password is active. Click Change Password before replacing it." : "Enter the password, then click Save Gallery."}</p>
+        </div>}
+      </section>
+      <section style={{ border: `1px solid ${COLORS.border}`, background: "rgba(255,255,255,0.025)", padding: "0.9rem", display: "flex", flexDirection: "column", gap: "0.9rem" }}>
+        <h3 style={{ color: COLORS.white, fontFamily: "'Inter', sans-serif", fontSize: 15, margin: 0 }}>Expiration</h3>
+        <label><FieldLabel>Expires At</FieldLabel><input type="datetime-local" value={formatLocalDateTime(gallery.expires_at)} onChange={(event) => setGalleryField("expires_at", event.target.value ? new Date(event.target.value).toISOString() : null)} style={inputStyle} /></label>
+        <button type="button" onClick={() => setGalleryField("expires_at", null)} style={buttonStyle}>Clear Expiration</button>
+      </section>
+      <section style={{ border: `1px solid ${COLORS.border}`, background: "rgba(255,255,255,0.025)", padding: "0.9rem", display: "flex", flexDirection: "column", gap: 8 }}>
+        <h3 style={{ color: COLORS.white, fontFamily: "'Inter', sans-serif", fontSize: 15, margin: 0 }}>Delivery Controls</h3>
+        <ToggleRow title="Allow downloads" description="Controls gallery ZIP downloads, grid downloads, and lightbox downloads." checked={gallery.allow_downloads !== false} onChange={(value) => setGalleryField("allow_downloads", value)} />
+        <ToggleRow title="Allow favorites" description="Controls local client favorite hearts in the gallery and lightbox." checked={gallery.allow_favorites !== false} onChange={(value) => setGalleryField("allow_favorites", value)} />
+        <ToggleRow title="Allow sharing" description="Controls share buttons and the share modal." checked={gallery.allow_sharing !== false} onChange={(value) => setGalleryField("allow_sharing", value)} />
+      </section>
+      <section style={{ border: `1px solid ${COLORS.border}`, background: "rgba(255,255,255,0.025)", padding: "0.9rem", color: COLORS.muted, fontFamily: "'Inter', sans-serif", fontSize: 12, lineHeight: 1.7 }}>
+        <strong style={{ color: COLORS.white }}>Current Delivery State</strong>
+        <div style={{ marginTop: 8 }}>Access: {gallery.access_mode || "public"}</div>
+        <div>Password: {hasExistingPassword ? "Set" : "Not set"}</div>
+        <div>Expires: {gallery.expires_at ? new Date(gallery.expires_at).toLocaleString() : "No expiration"}</div>
+        <div>Downloads: {gallery.allow_downloads !== false ? "On" : "Off"}</div>
+        <div>Favorites: {gallery.allow_favorites !== false ? "On" : "Off"}</div>
+        <div>Sharing: {gallery.allow_sharing !== false ? "On" : "Off"}</div>
+      </section>
+      <button type="button" onClick={() => openDeleteModal("gallery", gallery)} style={{ ...buttonStyle, color: "#ff8b8b", borderColor: "rgba(255,139,139,0.45)" }}>Delete Gallery</button>
+    </div>;
+  }
+
   function renderActivityPanel() { return <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", paddingBottom: "2rem" }}><div style={{ border: `1px solid ${COLORS.border}`, color: COLORS.muted, fontFamily: "'Inter', sans-serif", fontSize: 12, lineHeight: 1.6, padding: "0.85rem" }}><strong style={{ color: COLORS.white }}>Workspace Activity</strong><br />Activity logging can be connected later. For EST-71, this panel reserves the workspace area.</div><div style={{ color: COLORS.muted, fontFamily: "'Inter', sans-serif", fontSize: 12 }}>Created: {gallery.created_at ? new Date(gallery.created_at).toLocaleString() : "Unknown"}</div><div style={{ color: COLORS.muted, fontFamily: "'Inter', sans-serif", fontSize: 12 }}>Updated: {gallery.updated_at ? new Date(gallery.updated_at).toLocaleString() : "Unknown"}</div></div>; }
   function renderActivePanel() { if (activeTab === "design") return renderDesignPanel(); if (activeTab === "settings") return renderSettingsPanel(); if (activeTab === "activity") return renderActivityPanel(); return renderPhotosPanel(); }
 

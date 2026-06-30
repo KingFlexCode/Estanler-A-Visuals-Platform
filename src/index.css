@@ -202,3 +202,109 @@ img {
   border-color: var(--color-burning-flame);
   background: rgba(255, 177, 98, 0.08);
 }
+
+/* Public gallery icon system
+   Keeps the client-gallery actions consistent without adding another dependency. */
+:root {
+  --gallery-icon-heart: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.15' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78Z'/%3E%3C/svg%3E");
+  --gallery-icon-download: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.15' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3v12'/%3E%3Cpath d='m7 10 5 5 5-5'/%3E%3Cpath d='M5 21h14'/%3E%3C/svg%3E");
+  --gallery-icon-share: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.15' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 17 17 7'/%3E%3Cpath d='M8 7h9v9'/%3E%3C/svg%3E");
+  --gallery-icon-copy: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.05' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='9' y='9' width='11' height='11' rx='2'/%3E%3Cpath d='M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1'/%3E%3C/svg%3E");
+}
+
+button[title="Favorite photo"],
+button[title="Download photo"],
+button[title="Share photo"],
+button[title="Favorites"],
+button[title="Download gallery ZIP"],
+button[title="Share gallery"] {
+  align-items: center !important;
+  border-radius: 999px !important;
+  display: inline-flex !important;
+  font-size: 0 !important;
+  justify-content: center !important;
+  position: relative !important;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    opacity var(--transition-fast),
+    transform var(--transition-fast) !important;
+}
+
+button[title="Favorite photo"],
+button[title="Download photo"],
+button[title="Share photo"] {
+  backdrop-filter: blur(14px);
+  background: rgba(0, 0, 0, 0.28) !important;
+  border: 1px solid rgba(255, 255, 255, 0.28) !important;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+}
+
+button[title="Favorite photo"]::before,
+button[title="Download photo"]::before,
+button[title="Share photo"]::before,
+button[title="Favorites"]::before,
+button[title="Download gallery ZIP"]::before,
+button[title="Share gallery"]::before,
+input[readonly] + button::before {
+  background: currentColor;
+  content: "";
+  display: block;
+  flex: 0 0 auto;
+  height: 22px;
+  width: 22px;
+  -webkit-mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-size: contain;
+}
+
+button[title="Favorite photo"]::before,
+button[title="Favorites"]::before {
+  -webkit-mask-image: var(--gallery-icon-heart);
+  mask-image: var(--gallery-icon-heart);
+}
+
+button[title="Download photo"]::before,
+button[title="Download gallery ZIP"]::before {
+  -webkit-mask-image: var(--gallery-icon-download);
+  mask-image: var(--gallery-icon-download);
+}
+
+button[title="Share photo"]::before,
+button[title="Share gallery"]::before {
+  -webkit-mask-image: var(--gallery-icon-share);
+  mask-image: var(--gallery-icon-share);
+}
+
+input[readonly] + button {
+  align-items: center !important;
+  display: inline-flex !important;
+  gap: 0.55rem;
+  justify-content: center !important;
+}
+
+input[readonly] + button::before {
+  height: 18px;
+  width: 18px;
+  -webkit-mask-image: var(--gallery-icon-copy);
+  mask-image: var(--gallery-icon-copy);
+}
+
+button[title="Favorite photo"]:hover,
+button[title="Download photo"]:hover,
+button[title="Share photo"]:hover {
+  background: rgba(0, 0, 0, 0.42) !important;
+  border-color: rgba(255, 255, 255, 0.52) !important;
+  transform: translateY(-1px);
+}
+
+button[title="Favorites"]:hover,
+button[title="Download gallery ZIP"]:hover,
+button[title="Share gallery"]:hover {
+  background: rgba(0, 0, 0, 0.055) !important;
+  transform: translateY(-1px);
+}

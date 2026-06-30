@@ -1,0 +1,77 @@
+/* Gallery workspace toolbar icon polish
+   Keeps admin workspace controls visually consistent without adding a dependency. */
+:root {
+  --workspace-icon-sort: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.05' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 4v14'/%3E%3Cpath d='m3.5 14.5 3.5 3.5 3.5-3.5'/%3E%3Cpath d='M17 20V6'/%3E%3Cpath d='m13.5 9.5 3.5-3.5 3.5 3.5'/%3E%3C/svg%3E");
+  --workspace-icon-grid: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.05' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3.5' y='3.5' width='6.5' height='6.5' rx='1.4'/%3E%3Crect x='14' y='3.5' width='6.5' height='6.5' rx='1.4'/%3E%3Crect x='3.5' y='14' width='6.5' height='6.5' rx='1.4'/%3E%3Crect x='14' y='14' width='6.5' height='6.5' rx='1.4'/%3E%3C/svg%3E");
+  --workspace-icon-add-media: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.15' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='8.5'/%3E%3Cpath d='M12 8v8'/%3E%3Cpath d='M8 12h8'/%3E%3C/svg%3E");
+}
+
+/* Scope these selectors to the gallery editor photo-toolbar structure. */
+div[style*="display: flex"][style*="gap: 12px"][style*="position: relative"] > div[style*="position: relative"]:nth-of-type(1) > button,
+div[style*="display: flex"][style*="gap: 12px"][style*="position: relative"] > div[style*="position: relative"]:nth-of-type(2) > button {
+  align-items: center !important;
+  border-radius: 999px !important;
+  display: inline-flex !important;
+  font-size: 0 !important;
+  height: 40px !important;
+  justify-content: center !important;
+  padding: 0 !important;
+  transition: background 0.25s ease, color 0.25s ease, transform 0.25s ease !important;
+  width: 40px !important;
+}
+
+div[style*="display: flex"][style*="gap: 12px"][style*="position: relative"] > div[style*="position: relative"]:nth-of-type(1) > button::before,
+div[style*="display: flex"][style*="gap: 12px"][style*="position: relative"] > div[style*="position: relative"]:nth-of-type(2) > button::before,
+div[style*="display: flex"][style*="gap: 12px"][style*="position: relative"] > button:last-of-type::before {
+  background: currentColor;
+  content: "";
+  display: block;
+  flex: 0 0 auto;
+  height: 21px;
+  width: 21px;
+  -webkit-mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-size: contain;
+}
+
+div[style*="display: flex"][style*="gap: 12px"][style*="position: relative"] > div[style*="position: relative"]:nth-of-type(1) > button::before {
+  -webkit-mask-image: var(--workspace-icon-sort);
+  mask-image: var(--workspace-icon-sort);
+}
+
+div[style*="display: flex"][style*="gap: 12px"][style*="position: relative"] > div[style*="position: relative"]:nth-of-type(2) > button::before {
+  -webkit-mask-image: var(--workspace-icon-grid);
+  mask-image: var(--workspace-icon-grid);
+}
+
+div[style*="display: flex"][style*="gap: 12px"][style*="position: relative"] > button:last-of-type {
+  align-items: center !important;
+  border-radius: 999px !important;
+  display: inline-flex !important;
+  font-size: 0 !important;
+  gap: 9px !important;
+  padding: 9px 12px !important;
+  transition: background 0.25s ease, color 0.25s ease, transform 0.25s ease !important;
+}
+
+div[style*="display: flex"][style*="gap: 12px"][style*="position: relative"] > button:last-of-type::before {
+  height: 16px;
+  width: 16px;
+  -webkit-mask-image: var(--workspace-icon-add-media);
+  mask-image: var(--workspace-icon-add-media);
+}
+
+div[style*="display: flex"][style*="gap: 12px"][style*="position: relative"] > button:last-of-type::after {
+  content: "Add Media";
+  font-size: 12px;
+  letter-spacing: 0.12em;
+}
+
+div[style*="display: flex"][style*="gap: 12px"][style*="position: relative"] > div[style*="position: relative"] > button:hover,
+div[style*="display: flex"][style*="gap: 12px"][style*="position: relative"] > button:last-of-type:hover {
+  background: rgba(0, 0, 0, 0.055) !important;
+  transform: translateY(-1px);
+}

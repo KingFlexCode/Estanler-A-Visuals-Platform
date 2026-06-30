@@ -58,6 +58,10 @@ function sanitizeFileName(value = "file") {
     .replace(/^-|-$/g, "") || "file";
 }
 
+function unlockStorageKey(slug = "") {
+  return slug ? `client-gallery-unlock:${slug}` : "";
+}
+
 function typography(style = "classic") {
   const map = {
     classic: { family: displayFont, weight: 600, spacing: "0.02em", transform: "none" },
@@ -74,25 +78,29 @@ function typography(style = "classic") {
   return map[style] || map.classic;
 }
 
-function useFavorites(galleryId) {
+function useFavorites(galleryId, enabled) {
   const [favorites, setFavorites] = useState(new Set());
 
   useEffect(() => {
-    if (!galleryId) return;
+    if (!galleryId || !enabled) {
+      setFavorites(new Set());
+      return;
+    }
     try {
       const stored = window.localStorage.getItem(`client-gallery-favorites:${galleryId}`);
       setFavorites(new Set(stored ? JSON.parse(stored) : []));
     } catch {
       setFavorites(new Set());
     }
-  }, [galleryId]);
+  }, [enabled, galleryId]);
 
   useEffect(() => {
-    if (!galleryId) return;
+    if (!galleryId || !enabled) return;
     window.localStorage.setItem(`client-gallery-favorites:${galleryId}`, JSON.stringify([...favorites]));
-  }, [favorites, galleryId]);
+  }, [enabled, favorites, galleryId]);
 
   const toggleFavorite = (photoId) => {
+    if (!enabled) return;
     setFavorites((current) => {
       const next = new Set(current);
       if (next.has(photoId)) next.delete(photoId);
@@ -102,6 +110,19 @@ function useFavorites(galleryId) {
   };
 
   return { favorites, toggleFavorite };
+}
+
+function AccessState({ title, message, children }) {
+  return (
+    <div style={{ minHeight: "100vh", background: COLORS.bg, color: COLORS.white, display: "grid", placeItems: "center", padding: "2rem", textAlign: "center" }}>
+      <div style={{ maxWidth: 520, width: "100%" }}>
+        <div style={{ color: COLORS.gold, fontFamily: shellFont, fontSize: 11, fontWeight: 900, letterSpacing: "0.18em", marginBottom: "1rem", textTransform: "uppercase" }}>{BRAND_NAME}</div>
+        <h1 style={{ fontFamily: displayFont, fontSize: "clamp(2.2rem, 7vw, 4.4rem)", lineHeight: 1, margin: "0 0 1rem" }}>{title}</h1>
+        <p style={{ color: COLORS.muted, fontFamily: shellFont, lineHeight: 1.7, margin: "0 auto 1.5rem", maxWidth: 420 }}>{message}</p>
+        {children}
+      </div>
+    </div>
+  );
 }
 
 export default function PublicGalleryViewer() {
@@ -119,7 +140,15 @@ export default function PublicGalleryViewer() {
   const [slideshowPlaying, setSlideshowPlaying] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [downloadModalOpen, setDownloadModalOpen] = useState(false);
+  const [passwordInput, setPasswordInput] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [showUnlockPassword, setShowUnlockPassword] = useState(false);
+  const [unlocking, setUnlocking] = useState(false);
   const [downloadState, setDownloadState] = useState({ busy: false, progress: 0, total: 0, currentFile: "", status: "idle", message: "" });
+
+  const downloadsEnabled = gallery?.allow_downloads !== false;
+  const favoritesEnabled = gallery?.allow_favorites !== false;
+  const sharingEnabled = gallery?.allow_sharing !== false;
 
   const orderedSections = useMemo(() => sortByOrder(sections), [sections]);
   const orderedPhotos = useMemo(() => sortByOrder(photos), [photos]);
@@ -127,47 +156,59 @@ export default function PublicGalleryViewer() {
   const publicPhotos = useMemo(() => orderedPhotos.filter((photo) => !photo.section_id || visibleSectionIds.has(photo.section_id)), [orderedPhotos, visibleSectionIds]);
   const coverPhoto = useMemo(() => publicPhotos.find((photo) => photo.id === gallery?.cover_image_id) || publicPhotos[0] || null, [gallery?.cover_image_id, publicPhotos]);
   const lightboxIndex = lightbox ? publicPhotos.findIndex((photo) => photo.id === lightbox.id) : -1;
-  const { favorites, toggleFavorite } = useFavorites(gallery?.id);
+  const { favorites, toggleFavorite } = useFavorites(gallery?.id, favoritesEnabled);
 
   const galleryUrl = useMemo(() => {
     if (typeof window === "undefined") return `/gallery/${slug || ""}`;
     return `${window.location.origin}/gallery/${slug || gallery?.slug || ""}`;
   }, [gallery?.slug, slug]);
 
-  const loadGallery = useCallback(async () => {
-    setStatus("loading");
+  const loadGallery = useCallback(async (password = null, options = {}) => {
+    const { showError = false } = options;
     setError("");
+    const { data, error: payloadError } = await supabase.rpc("get_client_gallery_public_payload", {
+      p_slug: slug,
+      p_password: password,
+    });
 
-    const { data: galleryData, error: galleryError } = await supabase
-      .from("client_galleries")
-      .select("*")
-      .eq("slug", slug)
-      .eq("status", "published")
-      .single();
-
-    if (galleryError || !galleryData) {
-      setStatus("notfound");
-      return;
-    }
-
-    const [sectionResult, photoResult] = await Promise.all([
-      supabase.from("client_gallery_sections").select("*").eq("gallery_id", galleryData.id).eq("is_visible", true).order("display_order", { ascending: true }),
-      supabase.from("client_gallery_images").select("*").eq("gallery_id", galleryData.id).order("display_order", { ascending: true }),
-    ]);
-
-    if (sectionResult.error || photoResult.error) {
-      setError(sectionResult.error?.message || photoResult.error?.message || "Gallery could not load.");
+    if (payloadError) {
+      setError(payloadError.message || "Gallery could not load.");
       setStatus("error");
       return;
     }
 
-    setGallery(galleryData);
-    setSections(sectionResult.data || []);
-    setPhotos(photoResult.data || []);
-    setStatus("view");
+    const nextState = data?.state || "unavailable";
+    setGallery(data?.gallery || null);
+    setSections(data?.sections || []);
+    setPhotos(data?.photos || []);
+
+    if (nextState === "available") {
+      if (password && typeof window !== "undefined") window.sessionStorage.setItem(unlockStorageKey(slug), password);
+      setPasswordInput("");
+      setPasswordError("");
+      setShowUnlockPassword(false);
+      setStatus("view");
+      return;
+    }
+    if (nextState === "locked") {
+      if (password && typeof window !== "undefined") window.sessionStorage.removeItem(unlockStorageKey(slug));
+      setStatus("locked");
+      setPasswordError(password && showError ? "That password did not work. Please try again." : "");
+      return;
+    }
+    if (nextState === "expired") {
+      if (typeof window !== "undefined") window.sessionStorage.removeItem(unlockStorageKey(slug));
+      setStatus("expired");
+      return;
+    }
+    if (typeof window !== "undefined") window.sessionStorage.removeItem(unlockStorageKey(slug));
+    setStatus("notfound");
   }, [slug]);
 
-  useEffect(() => { loadGallery(); }, [loadGallery]);
+  useEffect(() => {
+    const savedPassword = typeof window !== "undefined" ? window.sessionStorage.getItem(unlockStorageKey(slug)) : "";
+    loadGallery(savedPassword || null, { showError: false });
+  }, [loadGallery, slug]);
 
   useEffect(() => {
     if (!notice || downloadState.busy) return undefined;
@@ -203,6 +244,17 @@ export default function PublicGalleryViewer() {
     return () => window.clearTimeout(timer);
   }, [lightbox, lightboxIndex, publicPhotos, slideshowPlaying]);
 
+  const submitPassword = async (event) => {
+    event.preventDefault();
+    if (!passwordInput.trim()) {
+      setPasswordError("Enter the gallery password.");
+      return;
+    }
+    setUnlocking(true);
+    await loadGallery(passwordInput, { showError: true });
+    setUnlocking(false);
+  };
+
   const sectionPhotos = useCallback((sectionId) => publicPhotos.filter((photo) => photo.section_id === sectionId), [publicPhotos]);
 
   const copyText = async (text, message) => {
@@ -226,6 +278,10 @@ export default function PublicGalleryViewer() {
   };
 
   const downloadPhoto = async (photo) => {
+    if (!downloadsEnabled) {
+      setNotice("Downloads are turned off for this gallery.");
+      return;
+    }
     const url = photoUrl(photo, "original");
     if (!url) return;
 
@@ -240,6 +296,10 @@ export default function PublicGalleryViewer() {
   };
 
   const sharePhoto = async (photo) => {
+    if (!sharingEnabled) {
+      setNotice("Sharing is turned off for this gallery.");
+      return;
+    }
     const url = photoUrl(photo, "display");
     if (navigator.share) {
       try {
@@ -253,6 +313,10 @@ export default function PublicGalleryViewer() {
   };
 
   const openDownloadModal = () => {
+    if (!downloadsEnabled) {
+      setNotice("Downloads are turned off for this gallery.");
+      return;
+    }
     setDownloadModalOpen(true);
     setDownloadState({ busy: false, progress: 0, total: publicPhotos.length, currentFile: "", status: "idle", message: "Ready to package this gallery into one ZIP file." });
   };
@@ -264,7 +328,7 @@ export default function PublicGalleryViewer() {
   };
 
   const startZipDownload = async () => {
-    if (downloadState.busy) return;
+    if (!downloadsEnabled || downloadState.busy) return;
     if (!publicPhotos.length) {
       setDownloadState({ busy: false, progress: 0, total: 0, currentFile: "", status: "error", message: "No photos available to package yet." });
       return;
@@ -308,6 +372,7 @@ export default function PublicGalleryViewer() {
   };
 
   const shareViaOption = async (label) => {
+    if (!sharingEnabled) return;
     if (label === "Email") {
       window.location.href = `mailto:?subject=${encodeURIComponent(gallery?.title || BRAND_NAME)}&body=${encodeURIComponent(galleryUrl)}`;
       return;
@@ -338,7 +403,24 @@ export default function PublicGalleryViewer() {
   };
 
   if (status === "loading") return <div style={{ minHeight: "100vh", background: COLORS.bg, display: "grid", placeItems: "center" }}><Spinner /></div>;
-  if (status === "notfound" || status === "error") return <div style={{ minHeight: "100vh", background: COLORS.bg, color: COLORS.white, display: "grid", placeItems: "center", padding: "2rem", textAlign: "center" }}><div style={{ maxWidth: 460 }}><h1 style={{ fontFamily: displayFont, fontSize: "2.3rem", margin: "0 0 1rem" }}>Gallery Not Found</h1><p style={{ color: COLORS.muted, fontFamily: shellFont, lineHeight: 1.7, margin: 0 }}>{error || "This gallery may be hidden, archived, or the link may be incorrect."}</p></div></div>;
+
+  if (status === "locked") {
+    return (
+      <AccessState title={gallery?.title || "Locked Gallery"} message="This gallery is password protected. Enter the password to view the photos.">
+        <form onSubmit={submitPassword} style={{ display: "grid", gap: "0.85rem", margin: "0 auto", maxWidth: 360 }}>
+          <div style={{ position: "relative" }}>
+            <input type={showUnlockPassword ? "text" : "password"} value={passwordInput} onChange={(event) => { setPasswordInput(event.target.value); setPasswordError(""); }} placeholder="Gallery password" style={{ background: "rgba(255,255,255,0.06)", border: `1px solid ${COLORS.border}`, color: COLORS.white, fontFamily: shellFont, fontSize: 14, outline: "none", padding: "0.95rem 3.2rem 0.95rem 1rem", width: "100%", boxSizing: "border-box" }} />
+            <button type="button" onClick={() => setShowUnlockPassword((visible) => !visible)} title={showUnlockPassword ? "Hide password" : "Show password"} aria-label={showUnlockPassword ? "Hide password" : "Show password"} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "transparent", border: "none", color: COLORS.gold, cursor: "pointer", fontSize: 18, height: 34, width: 34 }}>{showUnlockPassword ? "◉" : "◌"}</button>
+          </div>
+          {passwordError && <div style={{ color: "#ff8b8b", fontFamily: shellFont, fontSize: 12 }}>{passwordError}</div>}
+          <button type="submit" disabled={unlocking} style={{ background: COLORS.gold, border: "none", color: COLORS.bg, cursor: unlocking ? "not-allowed" : "pointer", fontFamily: shellFont, fontSize: 11, fontWeight: 900, letterSpacing: "0.16em", opacity: unlocking ? 0.6 : 1, padding: "1rem 1.2rem", textTransform: "uppercase" }}>{unlocking ? "Checking..." : "Unlock Gallery"}</button>
+        </form>
+      </AccessState>
+    );
+  }
+
+  if (status === "expired") return <AccessState title="Expired Gallery" message="This gallery is no longer available. Please contact the photographer if you need access restored." />;
+  if (status === "notfound" || status === "error") return <AccessState title="Gallery Not Available" message={error || "This gallery may be hidden, archived, expired, or the link may be incorrect."} />;
 
   const themeColor = gallery.theme_color || COLORS.gold;
   const coverStyle = gallery.cover_style || "center";
@@ -382,7 +464,7 @@ export default function PublicGalleryViewer() {
     const hovered = hoveredPhotoId === photo.id;
     const isSquare = mode === "square";
     const isMosaicFeature = mode === "mosaic" && index % 7 === 0;
-    return <article onClick={() => setLightbox(photo)} onMouseEnter={() => setHoveredPhotoId(photo.id)} onMouseLeave={() => setHoveredPhotoId(null)} style={{ breakInside: "avoid", marginBottom: mode === "clean" || mode === "editorial" ? 18 : 8, position: "relative", overflow: "hidden", background: "#111", cursor: "pointer", gridColumn: isMosaicFeature ? "span 2" : undefined, gridRow: isMosaicFeature ? "span 2" : undefined, aspectRatio: isSquare || mode === "mosaic" ? "1 / 1" : undefined }}><img src={imageUrl} alt={photo.alt_text || photo.title || photo.file_name || "Gallery photo"} loading="lazy" onError={(event) => { if (thumbnailUrl && event.currentTarget.src !== thumbnailUrl) event.currentTarget.src = thumbnailUrl; }} style={{ width: "100%", height: isSquare || mode === "mosaic" ? "100%" : "auto", objectFit: isSquare || mode === "mosaic" ? "cover" : "cover", display: "block" }} /><div style={{ position: "absolute", left: 0, right: 0, bottom: 0, minHeight: 82, background: "linear-gradient(to top, rgba(0,0,0,0.62) 0%, rgba(0,0,0,0.34) 48%, transparent 100%)", opacity: hovered ? 1 : 0, transition: "opacity 0.2s ease", display: "flex", alignItems: "flex-end", justifyContent: "flex-end", gap: "0.75rem", padding: "0.8rem" }}><button type="button" onClick={(event) => { event.stopPropagation(); toggleFavorite(photo.id); }} style={{ ...photoActionButtonStyle, color: isFavorite ? themeColor : "#fff" }} title="Favorite photo">{isFavorite ? "♥" : "♡"}</button><button type="button" onClick={(event) => { event.stopPropagation(); downloadPhoto(photo); }} style={photoActionButtonStyle} title="Download photo">⇩</button><button type="button" onClick={(event) => { event.stopPropagation(); sharePhoto(photo); }} style={photoActionButtonStyle} title="Share photo">↗</button></div></article>;
+    return <article onClick={() => setLightbox(photo)} onMouseEnter={() => setHoveredPhotoId(photo.id)} onMouseLeave={() => setHoveredPhotoId(null)} style={{ breakInside: "avoid", marginBottom: mode === "clean" || mode === "editorial" ? 18 : 8, position: "relative", overflow: "hidden", background: "#111", cursor: "pointer", gridColumn: isMosaicFeature ? "span 2" : undefined, gridRow: isMosaicFeature ? "span 2" : undefined, aspectRatio: isSquare || mode === "mosaic" ? "1 / 1" : undefined }}><img src={imageUrl} alt={photo.alt_text || photo.title || photo.file_name || "Gallery photo"} loading="lazy" onError={(event) => { if (thumbnailUrl && event.currentTarget.src !== thumbnailUrl) event.currentTarget.src = thumbnailUrl; }} style={{ width: "100%", height: isSquare || mode === "mosaic" ? "100%" : "auto", objectFit: isSquare || mode === "mosaic" ? "cover" : "cover", display: "block" }} /><div style={{ position: "absolute", left: 0, right: 0, bottom: 0, minHeight: 82, background: "linear-gradient(to top, rgba(0,0,0,0.62) 0%, rgba(0,0,0,0.34) 48%, transparent 100%)", opacity: hovered ? 1 : 0, transition: "opacity 0.2s ease", display: "flex", alignItems: "flex-end", justifyContent: "flex-end", gap: "0.75rem", padding: "0.8rem" }}>{favoritesEnabled && <button type="button" onClick={(event) => { event.stopPropagation(); toggleFavorite(photo.id); }} style={{ ...photoActionButtonStyle, color: isFavorite ? themeColor : "#fff" }} title="Favorite photo">{isFavorite ? "♥" : "♡"}</button>}{downloadsEnabled && <button type="button" onClick={(event) => { event.stopPropagation(); downloadPhoto(photo); }} style={photoActionButtonStyle} title="Download photo">⇩</button>}{sharingEnabled && <button type="button" onClick={(event) => { event.stopPropagation(); sharePhoto(photo); }} style={photoActionButtonStyle} title="Share photo">↗</button>}</div></article>;
   };
 
   const renderSectionPhotos = (items) => {
@@ -396,15 +478,15 @@ export default function PublicGalleryViewer() {
   };
 
   const renderShareModal = () => {
-    if (!shareModalOpen) return null;
+    if (!shareModalOpen || !sharingEnabled) return null;
     return <div style={{ position: "fixed", inset: 0, zIndex: 260, background: "rgba(0,0,0,0.68)", display: "grid", placeItems: "center", padding: "2rem" }}><div style={{ width: "min(760px, 94vw)", background: "#1d1d1d", color: "#fff", boxShadow: "0 34px 90px rgba(0,0,0,0.5)", padding: "clamp(2rem, 5vw, 4rem)", position: "relative" }}><button type="button" onClick={() => setShareModalOpen(false)} style={{ position: "absolute", right: 22, top: 18, background: "transparent", border: "none", color: "#aaa", cursor: "pointer", fontSize: 30 }}>×</button><h2 style={{ fontFamily: shellFont, fontSize: "1.65rem", letterSpacing: "0.16em", margin: "0 0 2.2rem", textTransform: "uppercase" }}>Share</h2><div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", background: "#282828", marginBottom: "2.4rem" }}><input value={galleryUrl} readOnly style={{ background: "transparent", border: "none", color: "#fff", fontFamily: shellFont, fontSize: "1rem", minWidth: 0, outline: "none", padding: "1.25rem" }} /><button type="button" onClick={() => copyText(galleryUrl, "Gallery link copied.")} style={modalButtonStyle}>Copy</button></div><div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(90px, 1fr))", gap: "2rem 1.2rem" }}>{shareOptions.map(([label, icon]) => <button key={label} type="button" onClick={() => shareViaOption(label)} style={{ background: "transparent", border: "none", color: "#b9b9b9", cursor: "pointer", fontFamily: shellFont, fontSize: "1rem" }}><span style={{ width: 64, height: 64, borderRadius: "50%", background: "#b9b9b9", color: "#222", display: "grid", placeItems: "center", fontSize: "1.8rem", fontWeight: 900, margin: "0 auto 0.7rem" }}>{icon}</span>{label}</button>)}</div></div></div>;
   };
 
   const renderDownloadModal = () => {
-    if (!downloadModalOpen) return null;
+    if (!downloadModalOpen || !downloadsEnabled) return null;
     const progressPercent = downloadState.total > 0 ? Math.round((downloadState.progress / downloadState.total) * 100) : 0;
     return <div style={{ position: "fixed", inset: 0, zIndex: 265, background: "rgba(0,0,0,0.68)", display: "grid", placeItems: "center", padding: "2rem" }}><div style={{ width: "min(580px, 94vw)", background: "#1d1d1d", color: "#fff", boxShadow: "0 34px 90px rgba(0,0,0,0.5)", padding: "clamp(2rem, 5vw, 3.2rem)", position: "relative" }}><button type="button" onClick={() => downloadState.busy ? cancelZipDownload() : setDownloadModalOpen(false)} style={{ position: "absolute", right: 22, top: 18, background: "transparent", border: "none", color: "#aaa", cursor: "pointer", fontSize: 30 }}>×</button><h2 style={{ fontFamily: shellFont, fontSize: "1.5rem", letterSpacing: "0.16em", margin: "0 0 0.8rem", textTransform: "uppercase" }}>Download Gallery</h2><p style={{ color: "#b9b9b9", fontFamily: shellFont, lineHeight: 1.7, margin: "0 0 1.8rem" }}>Package {publicPhotos.length} photo{publicPhotos.length === 1 ? "" : "s"} into one ZIP file instead of downloading each image one by one.</p><div style={{ background: "#282828", padding: "1.2rem", marginBottom: "1.4rem" }}><div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", color: "#fff", fontFamily: shellFont, fontWeight: 800, marginBottom: 10 }}><span>{downloadState.message || "Ready"}</span><span>{downloadState.progress} / {downloadState.total || publicPhotos.length}</span></div><div style={{ height: 8, background: "rgba(255,255,255,0.12)", overflow: "hidden" }}><div style={{ width: `${progressPercent}%`, height: "100%", background: themeColor, transition: "width 0.2s ease" }} /></div>{downloadState.currentFile && <div style={{ color: "#aaa", fontFamily: shellFont, fontSize: 12, marginTop: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Current: {downloadState.currentFile}</div>}</div><div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>{downloadState.busy ? <button type="button" onClick={cancelZipDownload} style={{ ...modalButtonStyle, background: "transparent", border: "1px solid rgba(255,255,255,0.28)" }}>Cancel</button> : <button type="button" onClick={() => setDownloadModalOpen(false)} style={{ ...modalButtonStyle, background: "transparent", border: "1px solid rgba(255,255,255,0.28)" }}>Close</button>}<button type="button" onClick={startZipDownload} disabled={downloadState.busy || downloadState.status === "done"} style={{ ...modalButtonStyle, background: themeColor, color: "#111", opacity: downloadState.busy || downloadState.status === "done" ? 0.55 : 1 }}>{downloadState.busy ? "Preparing..." : downloadState.status === "done" ? "Done" : "Start ZIP Download"}</button></div></div></div>;
   };
 
-  return <div style={{ minHeight: "100vh", background: "#f4f2ee", color: "#111" }}>{renderHero()}<header style={{ position: "sticky", top: 0, zIndex: 70, background: "rgba(255,255,255,0.94)", borderBottom: "1px solid rgba(0,0,0,0.08)", backdropFilter: "blur(14px)", display: "grid", gridTemplateColumns: "minmax(180px, 1fr) auto minmax(180px, 1fr)", alignItems: "center", gap: "1rem", padding: "0.9rem clamp(1rem, 4vw, 3rem)" }}><div style={{ minWidth: 0 }}><div style={{ fontFamily: displayFont, fontSize: "1.1rem", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{gallery.title}</div><div style={{ color: "#777", fontFamily: shellFont, fontSize: 12, marginTop: 2 }}>{visiblePhotoCount} photo{visiblePhotoCount === 1 ? "" : "s"}{favorites.size > 0 ? ` · ${favorites.size} favorite${favorites.size === 1 ? "" : "s"}` : ""}</div></div><nav style={{ display: "flex", gap: "0.4rem", overflowX: "auto", justifyContent: "center", maxWidth: "44vw" }}>{orderedSections.map((section) => <button key={section.id} type="button" onClick={() => document.getElementById(`section-${section.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" })} style={{ background: "transparent", border: "none", color: "#333", cursor: "pointer", fontFamily: shellFont, fontSize: 11, fontWeight: 800, letterSpacing: "0.12em", padding: "0.65rem 0.8rem", textTransform: "uppercase", whiteSpace: "nowrap" }}>{section.title}</button>)}</nav><div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4 }}><button type="button" onClick={() => setNotice(favorites.size > 0 ? `${favorites.size} favorite${favorites.size === 1 ? "" : "s"} saved on this device.` : "Tap the heart on any photo to add favorites.")} style={{ ...actionIconStyle, color: favorites.size > 0 ? themeColor : "#555" }} title="Favorites">♡</button><button type="button" onClick={openDownloadModal} style={actionIconStyle} title="Download gallery ZIP">⇩</button><button type="button" onClick={() => setShareModalOpen(true)} style={actionIconStyle} title="Share gallery">↗</button><button type="button" onClick={startSlideshow} style={actionIconStyle} title="Play slideshow">▶</button></div></header>{notice && <div style={{ position: "fixed", top: 82, left: "50%", transform: "translateX(-50%)", zIndex: 120, background: "#111", color: "#fff", border: `1px solid ${themeColor}`, boxShadow: "0 16px 48px rgba(0,0,0,0.24)", fontFamily: shellFont, fontSize: 13, padding: "0.85rem 1rem" }}>{notice}</div>}<main id="gallery-sections" style={{ padding: "clamp(2rem, 5vw, 4rem) clamp(1rem, 4vw, 3rem)" }}>{orderedSections.length === 0 && <div style={{ color: "#777", fontFamily: shellFont, padding: "4rem 1rem", textAlign: "center" }}>No visible photo sets yet.</div>}{orderedSections.map((section) => { const items = sectionPhotos(section.id); return <section id={`section-${section.id}`} key={section.id} style={{ scrollMarginTop: 110, marginBottom: "clamp(3rem, 7vw, 6rem)" }}><div style={{ display: "flex", alignItems: "end", justifyContent: "space-between", gap: "1rem", marginBottom: "1.25rem" }}><h2 style={{ fontFamily: displayFont, fontSize: "clamp(2rem, 4vw, 3.3rem)", lineHeight: 1, margin: 0 }}>{section.title}</h2><div style={{ color: "#777", fontFamily: shellFont, fontSize: 12, letterSpacing: "0.12em", textTransform: "uppercase" }}>{items.length} photo{items.length === 1 ? "" : "s"}</div></div>{renderSectionPhotos(items)}</section>; })}</main>{lightbox && <div style={{ position: "fixed", inset: 0, zIndex: 220, background: "rgba(0,0,0,0.96)", color: "#fff", display: "grid", gridTemplateRows: "auto 1fr auto" }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", padding: "1rem clamp(1rem, 3vw, 2rem)" }}><div style={{ minWidth: 0 }}><div style={{ fontFamily: shellFont, fontSize: 12, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.62)" }}>{lightboxIndex + 1} / {publicPhotos.length}{slideshowPlaying ? " · Slideshow" : ""}</div><div style={{ fontFamily: displayFont, fontSize: "1.2rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lightbox.title || lightbox.file_name || gallery.title}</div></div><button type="button" onClick={() => { setLightbox(null); setSlideshowPlaying(false); }} style={{ background: "transparent", border: "none", color: "#fff", cursor: "pointer", fontSize: 26 }}>×</button></div><div style={{ position: "relative", display: "grid", placeItems: "center", minHeight: 0, padding: "0 4rem" }}>{lightboxIndex > 0 && <button type="button" onClick={() => goLightbox(-1)} style={{ position: "absolute", left: "1rem", background: "transparent", border: "none", color: "#fff", cursor: "pointer", fontSize: "3rem" }}>‹</button>}<img src={photoUrl(lightbox, "display")} alt={lightbox.alt_text || lightbox.title || lightbox.file_name || "Gallery photo"} style={{ maxWidth: "100%", maxHeight: "78vh", objectFit: "contain", display: "block" }} />{lightboxIndex < publicPhotos.length - 1 && <button type="button" onClick={() => goLightbox(1)} style={{ position: "absolute", right: "1rem", background: "transparent", border: "none", color: "#fff", cursor: "pointer", fontSize: "3rem" }}>›</button>}</div><div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.8rem", padding: "1rem" }}><button type="button" onClick={() => toggleFavorite(lightbox.id)} style={{ background: "transparent", border: "none", color: favorites.has(lightbox.id) ? themeColor : "#fff", cursor: "pointer", fontSize: "1.7rem", lineHeight: 1 }}>{favorites.has(lightbox.id) ? "♥" : "♡"}</button><button type="button" onClick={() => sharePhoto(lightbox)} style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.28)", color: "#fff", cursor: "pointer", fontFamily: shellFont, fontSize: 11, fontWeight: 800, letterSpacing: "0.12em", padding: "0.75rem 1rem", textTransform: "uppercase" }}>Share</button><button type="button" onClick={() => downloadPhoto(lightbox)} style={{ background: themeColor, border: "none", color: "#111", cursor: "pointer", fontFamily: shellFont, fontSize: 11, fontWeight: 900, letterSpacing: "0.12em", padding: "0.75rem 1rem", textTransform: "uppercase" }}>Download</button><button type="button" onClick={() => setSlideshowPlaying((playing) => !playing)} style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.28)", color: "#fff", cursor: "pointer", fontFamily: shellFont, fontSize: 11, fontWeight: 800, letterSpacing: "0.12em", padding: "0.75rem 1rem", textTransform: "uppercase" }}>{slideshowPlaying ? "Pause" : "Play"}</button></div></div>}{renderShareModal()}{renderDownloadModal()}<footer style={{ borderTop: "1px solid rgba(0,0,0,0.08)", padding: "2.5rem 1rem", textAlign: "center" }}><a href="/" style={{ color: "#777", fontFamily: shellFont, fontSize: 10, fontWeight: 800, letterSpacing: "0.16em", textDecoration: "none", textTransform: "uppercase" }}>{BRAND_NAME}</a></footer></div>;
+  return <div style={{ minHeight: "100vh", background: "#f4f2ee", color: "#111" }}>{renderHero()}<header style={{ position: "sticky", top: 0, zIndex: 70, background: "rgba(255,255,255,0.94)", borderBottom: "1px solid rgba(0,0,0,0.08)", backdropFilter: "blur(14px)", display: "grid", gridTemplateColumns: "minmax(180px, 1fr) auto minmax(180px, 1fr)", alignItems: "center", gap: "1rem", padding: "0.9rem clamp(1rem, 4vw, 3rem)" }}><div style={{ minWidth: 0 }}><div style={{ fontFamily: displayFont, fontSize: "1.1rem", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{gallery.title}</div><div style={{ color: "#777", fontFamily: shellFont, fontSize: 12, marginTop: 2 }}>{visiblePhotoCount} photo{visiblePhotoCount === 1 ? "" : "s"}{favoritesEnabled && favorites.size > 0 ? ` · ${favorites.size} favorite${favorites.size === 1 ? "" : "s"}` : ""}</div></div><nav style={{ display: "flex", gap: "0.4rem", overflowX: "auto", justifyContent: "center", maxWidth: "44vw" }}>{orderedSections.map((section) => <button key={section.id} type="button" onClick={() => document.getElementById(`section-${section.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" })} style={{ background: "transparent", border: "none", color: "#333", cursor: "pointer", fontFamily: shellFont, fontSize: 11, fontWeight: 800, letterSpacing: "0.12em", padding: "0.65rem 0.8rem", textTransform: "uppercase", whiteSpace: "nowrap" }}>{section.title}</button>)}</nav><div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4 }}>{favoritesEnabled && <button type="button" onClick={() => setNotice(favorites.size > 0 ? `${favorites.size} favorite${favorites.size === 1 ? "" : "s"} saved on this device.` : "Tap the heart on any photo to add favorites.")} style={{ ...actionIconStyle, color: favorites.size > 0 ? themeColor : "#555" }} title="Favorites">♡</button>}{downloadsEnabled && <button type="button" onClick={openDownloadModal} style={actionIconStyle} title="Download gallery ZIP">⇩</button>}{sharingEnabled && <button type="button" onClick={() => setShareModalOpen(true)} style={actionIconStyle} title="Share gallery">↗</button>}<button type="button" onClick={startSlideshow} style={actionIconStyle} title="Play slideshow">▶</button></div></header>{notice && <div style={{ position: "fixed", top: 82, left: "50%", transform: "translateX(-50%)", zIndex: 120, background: "#111", color: "#fff", border: `1px solid ${themeColor}`, boxShadow: "0 16px 48px rgba(0,0,0,0.24)", fontFamily: shellFont, fontSize: 13, padding: "0.85rem 1rem" }}>{notice}</div>}<main id="gallery-sections" style={{ padding: "clamp(2rem, 5vw, 4rem) clamp(1rem, 4vw, 3rem)" }}>{orderedSections.length === 0 && <div style={{ color: "#777", fontFamily: shellFont, padding: "4rem 1rem", textAlign: "center" }}>No visible photo sets yet.</div>}{orderedSections.map((section) => { const items = sectionPhotos(section.id); return <section id={`section-${section.id}`} key={section.id} style={{ scrollMarginTop: 110, marginBottom: "clamp(3rem, 7vw, 6rem)" }}><div style={{ display: "flex", alignItems: "end", justifyContent: "space-between", gap: "1rem", marginBottom: "1.25rem" }}><h2 style={{ fontFamily: displayFont, fontSize: "clamp(2rem, 4vw, 3.3rem)", lineHeight: 1, margin: 0 }}>{section.title}</h2><div style={{ color: "#777", fontFamily: shellFont, fontSize: 12, letterSpacing: "0.12em", textTransform: "uppercase" }}>{items.length} photo{items.length === 1 ? "" : "s"}</div></div>{renderSectionPhotos(items)}</section>; })}</main>{lightbox && <div style={{ position: "fixed", inset: 0, zIndex: 220, background: "rgba(0,0,0,0.96)", color: "#fff", display: "grid", gridTemplateRows: "auto 1fr auto" }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", padding: "1rem clamp(1rem, 3vw, 2rem)" }}><div style={{ minWidth: 0 }}><div style={{ fontFamily: shellFont, fontSize: 12, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.62)" }}>{lightboxIndex + 1} / {publicPhotos.length}{slideshowPlaying ? " · Slideshow" : ""}</div><div style={{ fontFamily: displayFont, fontSize: "1.2rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lightbox.title || lightbox.file_name || gallery.title}</div></div><button type="button" onClick={() => { setLightbox(null); setSlideshowPlaying(false); }} style={{ background: "transparent", border: "none", color: "#fff", cursor: "pointer", fontSize: 26 }}>×</button></div><div style={{ position: "relative", display: "grid", placeItems: "center", minHeight: 0, padding: "0 4rem" }}>{lightboxIndex > 0 && <button type="button" onClick={() => goLightbox(-1)} style={{ position: "absolute", left: "1rem", background: "transparent", border: "none", color: "#fff", cursor: "pointer", fontSize: "3rem" }}>‹</button>}<img src={photoUrl(lightbox, "display")} alt={lightbox.alt_text || lightbox.title || lightbox.file_name || "Gallery photo"} style={{ maxWidth: "100%", maxHeight: "78vh", objectFit: "contain", display: "block" }} />{lightboxIndex < publicPhotos.length - 1 && <button type="button" onClick={() => goLightbox(1)} style={{ position: "absolute", right: "1rem", background: "transparent", border: "none", color: "#fff", cursor: "pointer", fontSize: "3rem" }}>›</button>}</div><div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.8rem", padding: "1rem" }}>{favoritesEnabled && <button type="button" onClick={() => toggleFavorite(lightbox.id)} style={{ background: "transparent", border: "none", color: favorites.has(lightbox.id) ? themeColor : "#fff", cursor: "pointer", fontSize: "1.7rem", lineHeight: 1 }}>{favorites.has(lightbox.id) ? "♥" : "♡"}</button>}{sharingEnabled && <button type="button" onClick={() => sharePhoto(lightbox)} style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.28)", color: "#fff", cursor: "pointer", fontFamily: shellFont, fontSize: 11, fontWeight: 800, letterSpacing: "0.12em", padding: "0.75rem 1rem", textTransform: "uppercase" }}>Share</button>}{downloadsEnabled && <button type="button" onClick={() => downloadPhoto(lightbox)} style={{ background: themeColor, border: "none", color: "#111", cursor: "pointer", fontFamily: shellFont, fontSize: 11, fontWeight: 900, letterSpacing: "0.12em", padding: "0.75rem 1rem", textTransform: "uppercase" }}>Download</button>}<button type="button" onClick={() => setSlideshowPlaying((playing) => !playing)} style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.28)", color: "#fff", cursor: "pointer", fontFamily: shellFont, fontSize: 11, fontWeight: 800, letterSpacing: "0.12em", padding: "0.75rem 1rem", textTransform: "uppercase" }}>{slideshowPlaying ? "Pause" : "Play"}</button></div></div>}{renderShareModal()}{renderDownloadModal()}<footer style={{ borderTop: "1px solid rgba(0,0,0,0.08)", padding: "2.5rem 1rem", textAlign: "center" }}><a href="/" style={{ color: "#777", fontFamily: shellFont, fontSize: 10, fontWeight: 800, letterSpacing: "0.16em", textDecoration: "none", textTransform: "uppercase" }}>{BRAND_NAME}</a></footer></div>;
 }
