@@ -3,6 +3,7 @@
 -- Run this after EST-72.
 -- This adds gallery access fields and a public-safe RPC payload used by /gallery/:slug.
 -- Password hashes stay server-side and are never returned to the browser.
+-- This script is safe to rerun while testing EST-73.
 
 create extension if not exists pgcrypto;
 
@@ -165,6 +166,7 @@ grant execute on function public.set_client_gallery_password(uuid, text) to auth
 -- Tighten direct public reads so normal anonymous SELECT only covers active public galleries.
 -- Password-protected payloads should be delivered through get_client_gallery_public_payload.
 drop policy if exists "Public can read published client galleries" on public.client_galleries;
+drop policy if exists "Public can read active public client galleries" on public.client_galleries;
 create policy "Public can read active public client galleries"
 on public.client_galleries
 for select
@@ -176,6 +178,7 @@ using (
 );
 
 drop policy if exists "Public can read visible published client gallery sections" on public.client_gallery_sections;
+drop policy if exists "Public can read visible active public client gallery sections" on public.client_gallery_sections;
 create policy "Public can read visible active public client gallery sections"
 on public.client_gallery_sections
 for select
@@ -193,6 +196,7 @@ using (
 );
 
 drop policy if exists "Public can read published client gallery images" on public.client_gallery_images;
+drop policy if exists "Public can read active public client gallery images" on public.client_gallery_images;
 create policy "Public can read active public client gallery images"
 on public.client_gallery_images
 for select
