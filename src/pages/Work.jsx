@@ -31,13 +31,6 @@ function mapPortfolioImage(image) {
   };
 }
 
-function getCategoryCounts(items) {
-  return items.reduce((acc, item) => {
-    acc[item.category] = (acc[item.category] || 0) + 1;
-    return acc;
-  }, {});
-}
-
 function Spinner() {
   return (
     <div
@@ -63,74 +56,129 @@ function Spinner() {
   );
 }
 
-function CategoryNav({ active, onChange, counts }) {
+function CategoryNav({ active, onChange }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        gap: 0,
-        overflowX: "auto",
-        borderBottom: `1px solid ${COLORS.border}`,
-        scrollbarWidth: "none",
-        msOverflowStyle: "none",
-      }}
-    >
-      {FILTERS.map((filter) => {
-        const isActive = active === filter;
-        const categoryKey = Object.keys(CATEGORY_LABELS).find(
-          (key) => CATEGORY_LABELS[key] === filter,
-        );
+    <section className="work-category-shell" aria-label="Portfolio categories">
+      <div className="work-category-track" role="tablist" aria-label="Filter work by category">
+        {FILTERS.map((filter) => {
+          const isActive = active === filter;
 
-        const count =
-          filter === "All"
-            ? Object.values(counts).reduce((total, value) => total + value, 0)
-            : counts[categoryKey] || 0;
+          return (
+            <button
+              key={filter}
+              type="button"
+              role="tab"
+              aria-selected={isActive}
+              aria-current={isActive ? "page" : undefined}
+              onClick={() => onChange(filter)}
+              className={`work-category-chip${isActive ? " is-active" : ""}`}
+            >
+              <span className="work-category-label">{filter}</span>
+            </button>
+          );
+        })}
+      </div>
 
-        return (
-          <button
-            key={filter}
-            type="button"
-            onClick={() => onChange(filter)}
-            style={{
-              fontFamily: "var(--font-body)",
-              fontWeight: isActive ? 700 : 500,
-              fontSize: 12,
-              letterSpacing: "0.12em",
-              color: isActive ? COLORS.text : COLORS.muted,
-              background: isActive ? COLORS.surfaceDark : "transparent",
-              border: "none",
-              borderLeft: isActive ? `1px solid ${COLORS.gold}` : "none",
-              borderRight: isActive ? `1px solid ${COLORS.gold}` : "none",
-              borderBottom: isActive
-                ? `2px solid ${COLORS.gold}`
-                : "2px solid transparent",
-              padding: "1rem 1.25rem 0.875rem",
-              cursor: "pointer",
-              whiteSpace: "nowrap",
-              transition: "all 0.2s ease",
-              marginBottom: "-1px",
-              textTransform: "uppercase",
-            }}
-          >
-            {filter}
-            {count > 0 && (
-              <span
-                style={{
-                  marginLeft: 6,
-                  fontSize: 10,
-                  color: isActive ? COLORS.gold : COLORS.muted,
-                  opacity: 0.85,
-                }}
-              >
-                ({count})
-              </span>
-            )}
-          </button>
-        );
-      })}
+      <style>{`
+        .work-category-shell {
+          background: transparent;
+          border: none;
+          box-shadow: none;
+          padding: 0;
+          position: relative;
+          width: 100%;
+        }
 
-      <style>{`::-webkit-scrollbar { display: none; }`}</style>
-    </div>
+        .work-category-track {
+          display: flex;
+          gap: 1rem;
+          justify-content: flex-start;
+          overflow-x: auto;
+          padding: 0 0 0.08rem;
+          scroll-padding-inline: 0;
+          scrollbar-width: none;
+          -ms-overflow-style: none;
+          position: relative;
+          z-index: 1;
+        }
+
+        .work-category-track::-webkit-scrollbar {
+          display: none;
+        }
+
+        .work-category-chip {
+          align-items: center;
+          background: rgba(255, 255, 255, 0.018);
+          border: 1px solid rgba(255, 255, 255, 0.07);
+          color: ${COLORS.muted};
+          cursor: pointer;
+          display: inline-flex;
+          flex: 0 0 auto;
+          font-family: var(--font-body);
+          font-size: 10px;
+          font-weight: 800;
+          justify-content: center;
+          letter-spacing: 0.12em;
+          min-height: 37px;
+          padding: 0.6rem 0.78rem;
+          position: relative;
+          text-transform: uppercase;
+          transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+          white-space: nowrap;
+        }
+
+        .work-category-chip::after {
+          background: ${COLORS.gold};
+          bottom: 4px;
+          content: "";
+          height: 1px;
+          left: 0.75rem;
+          opacity: 0;
+          position: absolute;
+          right: 0.75rem;
+          transform: scaleX(0.45);
+          transition: opacity 0.2s ease, transform 0.2s ease;
+        }
+
+        .work-category-chip:hover {
+          background: rgba(255, 255, 255, 0.052);
+          border-color: rgba(255, 255, 255, 0.15);
+          color: ${COLORS.text};
+          transform: translateY(-1px);
+        }
+
+        .work-category-chip:focus-visible {
+          outline: 2px solid ${COLORS.gold};
+          outline-offset: 3px;
+        }
+
+        .work-category-chip.is-active {
+          background:
+            linear-gradient(135deg, rgba(255, 180, 96, 0.13), rgba(255, 255, 255, 0.035)),
+            rgba(255, 255, 255, 0.035);
+          border: 1px solid ${COLORS.gold};
+          box-shadow: 0 10px 26px rgba(0, 0, 0, 0.2), inset 0 0 0 1px rgba(255,255,255,0.035);
+          color: ${COLORS.text};
+        }
+
+        .work-category-chip.is-active::after {
+          opacity: 1;
+          transform: scaleX(1);
+        }
+
+        @media (max-width: 720px) {
+          .work-category-track {
+            gap: 0.75rem;
+          }
+
+          .work-category-chip {
+            font-size: 9px;
+            min-height: 35px;
+            padding: 0.55rem 0.7rem;
+          }
+        }
+      `}</style>
+    </section>
   );
 }
 
@@ -336,7 +384,6 @@ export default function Work() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("All");
   const [lightbox, setLightbox] = useState(null);
-  const [counts, setCounts] = useState({});
 
   useEffect(() => {
     async function fetchAll() {
@@ -353,7 +400,6 @@ export default function Work() {
       if (error) {
         console.error("Error loading portfolio images:", error);
         setAllItems([]);
-        setCounts({});
         setLoading(false);
         return;
       }
@@ -362,7 +408,6 @@ export default function Work() {
         .map(mapPortfolioImage)
         .filter((item) => item.img);
       setAllItems(results);
-      setCounts(getCategoryCounts(results));
       setLoading(false);
     }
 
@@ -380,11 +425,11 @@ export default function Work() {
       <div
         style={{
           paddingTop: "88px",
-          padding: "88px clamp(1.5rem, 5vw, 4rem) 0",
+          padding: "96px clamp(1rem, 4vw, 3.5rem) 0",
           background: COLORS.bg,
         }}
       >
-        <CategoryNav active={filter} onChange={setFilter} counts={counts} />
+        <CategoryNav active={filter} onChange={setFilter} />
       </div>
 
       <div style={{ padding: 6 }}>

@@ -146,7 +146,7 @@ function Hero() {
             height: "100%",
             objectFit: "cover",
             objectPosition: photo.objectPosition,
-            opacity: backgroundIndex === index ? (loaded ? 0.42 : 0) : 0,
+            opacity: backgroundIndex === index ? (loaded ? 1 : 0) : 0,
             transform: `scale(${photo.zoom || 1})`,
             transition: "opacity 1.4s ease",
           }}
@@ -158,7 +158,7 @@ function Hero() {
           position: "absolute",
           inset: 0,
           background:
-            "linear-gradient(to top, rgba(27, 38, 50, 0.98) 0%, rgba(27, 38, 50, 0.72) 48%, rgba(27, 38, 50, 0.42) 100%)",
+            "linear-gradient(32deg, rgba(8, 12, 17, 0.96) 0%, rgba(10, 15, 21, 0.88) 24%, rgba(12, 18, 25, 0.58) 50%, rgba(14, 20, 27, 0.24) 76%, rgba(14, 20, 27, 0.08) 100%)",
         }}
       />
 
@@ -167,7 +167,7 @@ function Hero() {
           position: "absolute",
           inset: 0,
           background:
-            "radial-gradient(circle at 15% 85%, rgba(255, 177, 98, 0.22), transparent 28rem)",
+            "radial-gradient(circle at 15% 85%, rgba(255, 177, 98, 0.18), transparent 28rem)",
         }}
       />
 
