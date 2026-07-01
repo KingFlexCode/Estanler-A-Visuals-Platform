@@ -38,6 +38,16 @@ export async function saveGalleryFavorite(galleryId, imageId, visitorId = getGal
   if (error) throw error;
 }
 
+export async function removeGalleryFavorite(galleryId, imageId, visitorId = getGalleryVisitorId()) {
+  if (!galleryId || !imageId || !visitorId) return;
+  const query = supabase.from(FAVORITES_TABLE);
+  const { error } = await query["delete"]()
+    .eq("gallery_id", galleryId)
+    .eq("image_id", imageId)
+    .eq("visitor_id", visitorId);
+  if (error) throw error;
+}
+
 export function emptyFavoriteSet() {
   return new Set();
 }
