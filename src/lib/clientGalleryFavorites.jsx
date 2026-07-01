@@ -11,6 +11,7 @@ const ADMIN_SUMMARY_PANEL_ID = "est81-client-favorites-summary-panel";
 const ADMIN_DASHBOARD_ID = "est81-client-favorites-dashboard";
 const LEGACY_PANEL_IDS = ["est74-admin-favorites-panel", "est81-admin-client-favorites-panel"];
 const DOWNLOAD_LOG_PREFIX = "client-gallery-favorite-download-log:";
+const VIEW_MODE_KEY = "client-gallery-favorite-selection-view-mode";
 
 export function createGalleryVisitorId() {
   return `visitor-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -100,6 +101,10 @@ function selectedImagePath(image) {
   return image?.original_path || image?.display_path || image?.thumbnail_path || "";
 }
 
+function previewImagePath(image) {
+  return image?.thumbnail_path || image?.display_path || image?.original_path || "";
+}
+
 function safeFileName(value = "gallery-photo") {
   return String(value)
     .trim()
@@ -107,6 +112,17 @@ function safeFileName(value = "gallery-photo") {
     .replace(/\s+/g, "-")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "") || "gallery-photo";
+}
+
+function getSelectionViewMode() {
+  if (typeof window === "undefined") return "grid";
+  const saved = window.localStorage.getItem(VIEW_MODE_KEY);
+  return saved === "list" ? "list" : "grid";
+}
+
+function setSelectionViewMode(mode) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(VIEW_MODE_KEY, mode === "list" ? "list" : "grid");
 }
 
 function downloadLogKey(galleryId) {
@@ -216,6 +232,10 @@ function buttonStyle(kind = "light") {
   return `background:${dark ? "#111" : "transparent"};border:1px solid ${dark ? "#111" : "#ddd"};color:${dark ? "#fff" : "#111"};cursor:pointer;font-size:10px;font-weight:800;letter-spacing:.12em;padding:10px 12px;text-transform:uppercase;`;
 }
 
+function viewButtonStyle(active) {
+  return `background:${active ? "#111" : "transparent"};border:1px solid ${active ? "#111" : "#ddd"};color:${active ? "#fff" : "#111"};cursor:pointer;font-size:10px;font-weight:900;letter-spacing:.1em;padding:8px 10px;text-transform:uppercase;`;
+}
+
 function metric(label, value) {
   const card = document.createElement("div");
   card.style.cssText = "border:1px solid #e5e5e5;background:#fff;padding:1rem;";
@@ -290,9 +310,135 @@ function buildSidebarSummary(rows, galleryId, loading = false) {
   return summary;
 }
 
+function selectedImageName(row) {
+  return row.image.file_name || row.image.title || row.image.id;
+}
+
+function renderSelectedGrid(rows, galleryId) {
+  const grid = document.createElement("div");
+  grid.style.cssText = "display:grid;grid-template-columns:repeat(auto-fill,minmax(175px,1fr));gap:1rem;max-height:680px;overflow:auto;padding-right:.25rem;";
+
+  rows.forEach((row) => {
+    const image = row.image;
+    const card = document.createElement("article");
+    card.style.cssText = "border:1px solid #e7e7e7;background:#fff;display:flex;flex-direction:column;min-width:0;overflow:hidden;";
+
+    const preview = document.createElement("button");
+    preview.type = "button";
+    preview.style.cssText = "aspect-ratio:4/3;background:#f2f2f2;border:none;cursor:pointer;display:block;overflow:hidden;padding:0;width:100%;";
+    preview.title = "Download selected image";
+
+    const img = document.createElement("img");
+    img.src = galleryPublicUrl(previewImagePath(image));
+    img.alt = selectedImageName(row);
+    img.loading = "lazy";
+    img.style.cssText = "display:block;height:100%;object-fit:cover;width:100%;";
+    preview.append(img);
+
+    const body = document.createElement("div");
+    body.style.cssText = "display:grid;gap:.55rem;padding:.75rem;";
+
+    const name = document.createElement("button");
+    name.type = "button";
+    name.textContent = selectedImageName(row);
+    name.style.cssText = "background:transparent;border:none;color:#111;cursor:pointer;font-size:12px;font-weight:800;line-height:1.35;overflow:hidden;padding:0;text-align:left;text-decoration:underline;text-overflow:ellipsis;text-underline-offset:3px;white-space:nowrap;";
+
+    const meta = document.createElement("div");
+    meta.style.cssText = "align-items:center;display:flex;justify-content:space-between;gap:.75rem;";
+    const count = document.createElement("strong");
+    count.textContent = `♥ ${row.favorite_count}`;
+    count.style.cssText = "color:#00b894;font-size:12px;";
+    const action = document.createElement("button");
+    action.type = "button";
+    action.textContent = "Download";
+    action.style.cssText = "background:transparent;border:1px solid #ddd;color:#111;cursor:pointer;font-size:9px;font-weight:900;letter-spacing:.1em;padding:6px 8px;text-transform:uppercase;";
+    meta.append(count, action);
+
+    const downloadOne = async (target) => {
+      const original = target.textContent;
+      target.textContent = "Preparing...";
+      try {
+        await saveSelectedImage(row, galleryId);
+        target.textContent = "Started";
+      } catch {
+        target.textContent = "Failed";
+      } finally {
+        window.setTimeout(() => {
+          target.textContent = original;
+          renderActivityWorkspace(true);
+        }, 1500);
+      }
+    };
+
+    preview.onclick = () => downloadOne(action);
+    name.onclick = () => downloadOne(name);
+    action.onclick = () => downloadOne(action);
+
+    body.append(name, meta);
+    card.append(preview, body);
+    grid.append(card);
+  });
+
+  return grid;
+}
+
+function renderSelectedList(rows, galleryId) {
+  const table = document.createElement("div");
+  table.style.cssText = "display:grid;gap:0;max-height:620px;overflow:auto;border-top:1px solid #eee;";
+  rows.forEach((row, index) => {
+    const item = document.createElement("div");
+    item.style.cssText = "display:grid;grid-template-columns:52px 74px minmax(0,1fr) 92px;gap:1rem;align-items:center;border-bottom:1px solid #eee;padding:.7rem 0;";
+    const number = document.createElement("div");
+    number.textContent = String(index + 1).padStart(2, "0");
+    number.style.cssText = "color:#aaa;font-size:12px;font-weight:900;";
+
+    const thumb = document.createElement("button");
+    thumb.type = "button";
+    thumb.style.cssText = "aspect-ratio:1/1;background:#f2f2f2;border:none;cursor:pointer;overflow:hidden;padding:0;width:74px;";
+    const img = document.createElement("img");
+    img.src = galleryPublicUrl(previewImagePath(row.image));
+    img.alt = selectedImageName(row);
+    img.loading = "lazy";
+    img.style.cssText = "display:block;height:100%;object-fit:cover;width:100%;";
+    thumb.append(img);
+
+    const name = document.createElement("button");
+    name.type = "button";
+    name.textContent = selectedImageName(row);
+    name.style.cssText = "background:transparent;border:none;color:#111;cursor:pointer;font:inherit;font-size:14px;padding:0;text-align:left;text-decoration:underline;text-underline-offset:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+
+    const count = document.createElement("strong");
+    count.textContent = `♥ ${row.favorite_count}`;
+    count.style.cssText = "color:#00b894;font-size:13px;text-align:right;";
+
+    const downloadOne = async (target) => {
+      const original = target.textContent;
+      target.textContent = "Preparing image...";
+      try {
+        await saveSelectedImage(row, galleryId);
+        target.textContent = "Download started";
+      } catch {
+        target.textContent = "Download failed";
+      } finally {
+        window.setTimeout(() => {
+          target.textContent = original;
+          renderActivityWorkspace(true);
+        }, 1600);
+      }
+    };
+
+    thumb.onclick = () => downloadOne(name);
+    name.onclick = () => downloadOne(name);
+    item.append(number, thumb, name, count);
+    table.append(item);
+  });
+  return table;
+}
+
 function buildActivityDashboard(rows, galleryId, loading = false) {
   const log = loadDownloadLog(galleryId);
   const totalSelections = rows.reduce((total, row) => total + Number(row.favorite_count || 0), 0);
+  const viewMode = getSelectionViewMode();
   const dashboard = document.createElement("section");
   dashboard.id = ADMIN_DASHBOARD_ID;
   dashboard.style.cssText = "width:min(1180px,100%);margin:0 auto;font-family:'Inter',sans-serif;color:#111;";
@@ -316,7 +462,7 @@ function buildActivityDashboard(rows, galleryId, loading = false) {
   copyButton.textContent = "Copy Favorite Names";
   copyButton.style.cssText = buttonStyle();
   copyButton.onclick = async () => {
-    const names = rows.map((row) => row.image.file_name || row.image.title || row.image.id).join("\n");
+    const names = rows.map((row) => selectedImageName(row)).join("\n");
     await navigator.clipboard.writeText(names || "No favorite selections yet.");
     copyButton.textContent = "Copied";
     window.setTimeout(() => { copyButton.textContent = "Copy Favorite Names"; }, 1600);
@@ -342,7 +488,33 @@ function buildActivityDashboard(rows, galleryId, loading = false) {
 
   const listCard = document.createElement("section");
   listCard.style.cssText = "background:#fff;border:1px solid #e5e5e5;padding:1rem;";
-  listCard.innerHTML = "<h3 style='font-size:1rem;margin:0 0 .25rem;'>Selected Image Files</h3><p style='color:#777;font-size:12px;line-height:1.5;margin:0 0 1rem;'>Click a filename to download that individual selected image.</p>";
+
+  const listHeader = document.createElement("div");
+  listHeader.style.cssText = "align-items:flex-start;display:flex;gap:1rem;justify-content:space-between;margin-bottom:.35rem;";
+  const listTitle = document.createElement("div");
+  listTitle.innerHTML = "<h3 style='font-size:1rem;margin:0 0 .25rem;'>Selected Image Files</h3><p style='color:#777;font-size:12px;line-height:1.5;margin:0;'>Use grid view to see selected photos, or list view for fast filename scanning.</p>";
+
+  const viewActions = document.createElement("div");
+  viewActions.style.cssText = "display:flex;gap:6px;flex:0 0 auto;";
+  const gridButton = document.createElement("button");
+  gridButton.type = "button";
+  gridButton.textContent = "Grid";
+  gridButton.style.cssText = viewButtonStyle(viewMode === "grid");
+  gridButton.onclick = () => {
+    setSelectionViewMode("grid");
+    renderActivityWorkspace(true);
+  };
+  const listButton = document.createElement("button");
+  listButton.type = "button";
+  listButton.textContent = "List";
+  listButton.style.cssText = viewButtonStyle(viewMode === "list");
+  listButton.onclick = () => {
+    setSelectionViewMode("list");
+    renderActivityWorkspace(true);
+  };
+  viewActions.append(gridButton, listButton);
+  listHeader.append(listTitle, viewActions);
+  listCard.append(listHeader);
 
   if (loading) {
     const loadingText = document.createElement("p");
@@ -355,40 +527,7 @@ function buildActivityDashboard(rows, galleryId, loading = false) {
     empty.style.cssText = "color:#777;font-size:13px;";
     listCard.append(empty);
   } else {
-    const table = document.createElement("div");
-    table.style.cssText = "display:grid;gap:0;max-height:620px;overflow:auto;border-top:1px solid #eee;";
-    rows.forEach((row, index) => {
-      const item = document.createElement("div");
-      item.style.cssText = "display:grid;grid-template-columns:52px minmax(0,1fr) 92px;gap:1rem;align-items:center;border-bottom:1px solid #eee;padding:.7rem 0;";
-      const number = document.createElement("div");
-      number.textContent = String(index + 1).padStart(2, "0");
-      number.style.cssText = "color:#aaa;font-size:12px;font-weight:900;";
-      const name = document.createElement("button");
-      name.type = "button";
-      name.textContent = row.image.file_name || row.image.title || row.image.id;
-      name.style.cssText = "background:transparent;border:none;color:#111;cursor:pointer;font:inherit;font-size:14px;padding:0;text-align:left;text-decoration:underline;text-underline-offset:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
-      name.onclick = async () => {
-        const original = name.textContent;
-        name.textContent = "Preparing image...";
-        try {
-          await saveSelectedImage(row, galleryId);
-          name.textContent = "Download started";
-        } catch {
-          name.textContent = "Download failed";
-        } finally {
-          window.setTimeout(() => {
-            name.textContent = original;
-            renderActivityWorkspace(true);
-          }, 1600);
-        }
-      };
-      const count = document.createElement("strong");
-      count.textContent = `♥ ${row.favorite_count}`;
-      count.style.cssText = "color:#00b894;font-size:13px;text-align:right;";
-      item.append(number, name, count);
-      table.append(item);
-    });
-    listCard.append(table);
+    listCard.append(viewMode === "list" ? renderSelectedList(rows, galleryId) : renderSelectedGrid(rows, galleryId));
   }
 
   const logCard = document.createElement("section");
