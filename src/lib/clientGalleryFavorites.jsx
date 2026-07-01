@@ -79,13 +79,15 @@ async function syncFavoriteIds(galleryId, previousIds, nextIds) {
 export function installGalleryFavoriteSync() {
   if (typeof window === "undefined" || window.__galleryFavoriteSyncInstalled) return;
   window.__galleryFavoriteSyncInstalled = true;
+  const installedAt = Date.now();
 
   const nativeSetItem = window.localStorage.setItem.bind(window.localStorage);
   window.localStorage.setItem = (key, value) => {
     const normalizedKey = String(key);
     const previousValue = normalizedKey.startsWith(FAVORITES_STORAGE_PREFIX) ? window.localStorage.getItem(normalizedKey) : null;
-    nativeSetItem(key, value);
-    if (!normalizedKey.startsWith(FAVORITES_STORAGE_PREFIX)) return;
+    const isInitialEmptyOverwrite = Date.now() - installedAt < 3000 && previousValue && previousValue !== "[]" && value === "[]";
+    nativeSetItem(key, isInitialEmptyOverwrite ? previousValue : value);
+    if (!normalizedKey.startsWith(FAVORITES_STORAGE_PREFIX) || isInitialEmptyOverwrite) return;
     const galleryId = normalizedKey.slice(FAVORITES_STORAGE_PREFIX.length);
     syncFavoriteIds(galleryId, parseFavoriteIds(previousValue), parseFavoriteIds(value)).catch(() => undefined);
   };
