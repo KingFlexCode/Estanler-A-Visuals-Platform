@@ -16,6 +16,17 @@ export function getGalleryVisitorId() {
   return next;
 }
 
+export async function loadGalleryFavorites(galleryId, visitorId = getGalleryVisitorId()) {
+  if (!galleryId || !visitorId) return new Set();
+  const { data, error } = await supabase
+    .from(FAVORITES_TABLE)
+    .select("image_id")
+    .eq("gallery_id", galleryId)
+    .eq("visitor_id", visitorId);
+  if (error) throw error;
+  return new Set((data || []).map((row) => row.image_id));
+}
+
 export function emptyFavoriteSet() {
   return new Set();
 }
