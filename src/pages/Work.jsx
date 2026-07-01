@@ -76,8 +76,17 @@ function Spinner() {
 }
 
 function CategoryNav({ active, onChange, counts }) {
+  const activeCount = getFilterCount(active, counts);
+
   return (
     <section className="work-category-shell" aria-label="Portfolio categories">
+      <div className="work-category-meta">
+        <span>Browse Work</span>
+        <span>
+          {active} · {activeCount} photo{activeCount === 1 ? "" : "s"}
+        </span>
+      </div>
+
       <div className="work-category-track" role="tablist" aria-label="Filter work by category">
         {FILTERS.map((filter) => {
           const isActive = active === filter;
@@ -102,14 +111,14 @@ function CategoryNav({ active, onChange, counts }) {
 
       <style>{`
         .work-category-shell {
-          width: min(100%, 1120px);
-          margin: 0 auto;
-          padding: 0.42rem;
-          border: 1px solid rgba(255, 255, 255, 0.105);
-          border-radius: 18px;
-          background: rgba(255, 255, 255, 0.07);
-          box-shadow: 0 18px 52px rgba(0, 0, 0, 0.22);
-          backdrop-filter: blur(18px);
+          border: 1px solid ${COLORS.border};
+          border-left: none;
+          border-right: none;
+          background:
+            linear-gradient(90deg, rgba(255,255,255,0.025), rgba(255,255,255,0.055), rgba(255,255,255,0.025)),
+            ${COLORS.bg};
+          box-shadow: 0 18px 50px rgba(0, 0, 0, 0.18);
+          padding: 0.85rem 0;
           position: relative;
         }
 
@@ -117,30 +126,42 @@ function CategoryNav({ active, onChange, counts }) {
         .work-category-shell::after {
           content: "";
           position: absolute;
-          top: 0.42rem;
-          bottom: 0.42rem;
-          width: 1.5rem;
+          top: 0;
+          bottom: 0;
+          width: clamp(1rem, 3vw, 2rem);
           pointer-events: none;
           z-index: 2;
         }
 
         .work-category-shell::before {
-          left: 0.42rem;
-          border-radius: 14px 0 0 14px;
-          background: linear-gradient(90deg, rgba(24, 35, 45, 0.96), transparent);
+          left: 0;
+          background: linear-gradient(90deg, ${COLORS.bg}, transparent);
         }
 
         .work-category-shell::after {
-          right: 0.42rem;
-          border-radius: 0 14px 14px 0;
-          background: linear-gradient(270deg, rgba(24, 35, 45, 0.96), transparent);
+          right: 0;
+          background: linear-gradient(270deg, ${COLORS.bg}, transparent);
+        }
+
+        .work-category-meta {
+          align-items: center;
+          color: ${COLORS.muted};
+          display: flex;
+          font-family: var(--font-body);
+          font-size: 10px;
+          font-weight: 800;
+          justify-content: space-between;
+          letter-spacing: 0.14em;
+          padding: 0 clamp(1rem, 2.4vw, 1.35rem) 0.65rem;
+          text-transform: uppercase;
         }
 
         .work-category-track {
           display: flex;
-          gap: 0.25rem;
+          gap: 0.55rem;
           overflow-x: auto;
-          padding: 0.08rem;
+          padding: 0 clamp(1rem, 2.4vw, 1.35rem) 0.15rem;
+          scroll-padding-inline: 1rem;
           scrollbar-width: none;
           -ms-overflow-style: none;
           position: relative;
@@ -153,9 +174,8 @@ function CategoryNav({ active, onChange, counts }) {
 
         .work-category-chip {
           align-items: center;
-          background: transparent;
-          border: 1px solid transparent;
-          border-radius: 13px;
+          background: rgba(255, 255, 255, 0.025);
+          border: 1px solid rgba(255, 255, 255, 0.075);
           color: ${COLORS.muted};
           cursor: pointer;
           display: inline-flex;
@@ -166,15 +186,30 @@ function CategoryNav({ active, onChange, counts }) {
           gap: 0.48rem;
           justify-content: center;
           letter-spacing: 0.13em;
-          min-height: 46px;
-          padding: 0.82rem 1.05rem;
+          min-height: 44px;
+          padding: 0.78rem 1rem;
+          position: relative;
           text-transform: uppercase;
-          transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+          transition: background 0.22s ease, border-color 0.22s ease, color 0.22s ease, transform 0.22s ease, box-shadow 0.22s ease;
           white-space: nowrap;
         }
 
+        .work-category-chip::after {
+          background: ${COLORS.gold};
+          bottom: 5px;
+          content: "";
+          height: 2px;
+          left: 1rem;
+          opacity: 0;
+          position: absolute;
+          right: 1rem;
+          transform: scaleX(0.35);
+          transition: opacity 0.22s ease, transform 0.22s ease;
+        }
+
         .work-category-chip:hover {
-          background: rgba(255, 255, 255, 0.08);
+          background: rgba(255, 255, 255, 0.065);
+          border-color: rgba(255, 255, 255, 0.16);
           color: ${COLORS.text};
           transform: translateY(-1px);
         }
@@ -185,30 +220,45 @@ function CategoryNav({ active, onChange, counts }) {
         }
 
         .work-category-chip.is-active {
-          background: rgba(255, 255, 255, 0.92);
-          border-color: rgba(255, 255, 255, 0.72);
-          box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
-          color: #101820;
+          background:
+            linear-gradient(135deg, rgba(255, 180, 96, 0.16), rgba(255, 255, 255, 0.055)),
+            ${COLORS.surfaceDark};
+          border: 1px solid ${COLORS.gold};
+          box-shadow: 0 14px 34px rgba(0, 0, 0, 0.26), inset 0 0 0 1px rgba(255,255,255,0.045);
+          color: ${COLORS.text};
+        }
+
+        .work-category-chip.is-active::after {
+          opacity: 1;
+          transform: scaleX(1);
         }
 
         .work-category-count {
-          color: inherit;
+          color: ${COLORS.muted};
           font-size: 10px;
-          letter-spacing: 0.04em;
-          opacity: 0.62;
+          letter-spacing: 0.06em;
+          opacity: 0.86;
+        }
+
+        .work-category-chip.is-active .work-category-count {
+          color: ${COLORS.gold};
         }
 
         @media (max-width: 720px) {
           .work-category-shell {
-            border-radius: 16px;
-            margin-left: -0.15rem;
-            margin-right: -0.15rem;
-            width: auto;
+            margin-left: -0.75rem;
+            margin-right: -0.75rem;
+          }
+
+          .work-category-meta {
+            align-items: flex-start;
+            flex-direction: column;
+            gap: 0.35rem;
           }
 
           .work-category-chip {
             font-size: 10px;
-            min-height: 42px;
+            min-height: 41px;
             padding: 0.72rem 0.86rem;
           }
         }
