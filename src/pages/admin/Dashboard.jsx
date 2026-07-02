@@ -338,9 +338,6 @@ export default function Dashboard() {
               A central place to monitor portfolio content, client galleries, and new booking activity.
             </p>
           </div>
-          <Link to="/" target="_blank" className="admin-dashboard-view-site">
-            View Public Site ↗
-          </Link>
         </section>
 
         {statsError && <div className="admin-dashboard-alert">{statsError}</div>}
@@ -390,10 +387,6 @@ export default function Dashboard() {
         }
 
         .admin-dashboard-hero {
-          align-items: flex-start;
-          display: flex;
-          gap: 1rem;
-          justify-content: space-between;
           margin-bottom: 2rem;
         }
 
@@ -422,25 +415,6 @@ export default function Dashboard() {
           line-height: 1.7;
           margin: 0.9rem 0 0;
           max-width: 620px;
-        }
-
-        .admin-dashboard-view-site {
-          border: 1px solid ${adminColors.border};
-          color: ${COLORS.gold};
-          flex: 0 0 auto;
-          font-family: ${adminFont};
-          font-size: 11px;
-          font-weight: 900;
-          letter-spacing: 0.12em;
-          padding: 12px 16px;
-          text-decoration: none;
-          text-transform: uppercase;
-          transition: background 0.2s ease, color 0.2s ease;
-        }
-
-        .admin-dashboard-view-site:hover {
-          background: rgba(200, 169, 107, 0.1);
-          color: ${adminColors.text};
         }
 
         .admin-dashboard-alert,
@@ -587,14 +561,6 @@ export default function Dashboard() {
         }
 
         @media (max-width: 760px) {
-          .admin-dashboard-hero {
-            flex-direction: column;
-          }
-
-          .admin-dashboard-view-site {
-            width: fit-content;
-          }
-
           .admin-dashboard-grid,
           .admin-dashboard-action-grid {
             grid-template-columns: 1fr;
