@@ -6,6 +6,7 @@ import { AdminNav } from "./Dashboard";
 
 const font = "'Inter', sans-serif";
 const heading = "'Playfair Display', serif";
+const PENDING_EMAIL_KEY = "estanler-admin-pending-email";
 
 const adminColors = {
   bg: COLORS.bgDark || COLORS.bg,
@@ -118,11 +119,54 @@ function SettingsCard({ title, description, children }) {
   );
 }
 
+function PendingEmailNotice({ pendingEmail, onClear }) {
+  if (!pendingEmail) return null;
+
+  return (
+    <div
+      style={{
+        background: "rgba(200,169,107,0.08)",
+        border: `1px solid rgba(200,169,107,0.34)`,
+        color: adminColors.text,
+        fontFamily: font,
+        fontSize: 13,
+        lineHeight: 1.7,
+        marginBottom: "1rem",
+        padding: "12px 14px",
+      }}
+    >
+      <div style={{ color: COLORS.gold, fontSize: 10, fontWeight: 900, letterSpacing: "0.14em", marginBottom: 6, textTransform: "uppercase" }}>
+        Email Change Pending
+      </div>
+      <div>
+        Pending new email: <strong>{pendingEmail}</strong>
+      </div>
+      <div style={{ color: adminColors.muted, marginTop: 6 }}>
+        Your current login email stays active until the email confirmation is completed. Check the new email inbox and, depending on Supabase settings, the old email inbox too.
+      </div>
+      <button
+        type="button"
+        onClick={onClear}
+        style={{
+          ...buttonBase,
+          background: "transparent",
+          color: COLORS.gold,
+          marginTop: 12,
+          padding: "9px 11px",
+        }}
+      >
+        Clear Pending Notice
+      </button>
+    </div>
+  );
+}
+
 export default function AdminSettings() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [loadingUser, setLoadingUser] = useState(true);
   const [email, setEmail] = useState("");
+  const [pendingEmail, setPendingEmail] = useState("");
   const [savingEmail, setSavingEmail] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
   const [emailNotice, setEmailNotice] = useState("");
@@ -140,18 +184,34 @@ export default function AdminSettings() {
     async function loadUser() {
       setLoadingUser(true);
       const { data, error } = await supabase.auth.getUser();
+      const currentEmail = data?.user?.email || "";
+      const storedPendingEmail = window.localStorage.getItem(PENDING_EMAIL_KEY) || "";
 
       if (error) {
         setEmailError(error.message || "Admin account could not be loaded.");
       }
 
+      if (storedPendingEmail && storedPendingEmail === currentEmail) {
+        window.localStorage.removeItem(PENDING_EMAIL_KEY);
+        setPendingEmail("");
+        setEmailNotice("Email change completed.");
+      } else {
+        setPendingEmail(storedPendingEmail);
+      }
+
       setUser(data?.user || null);
-      setEmail(data?.user?.email || "");
+      setEmail("");
       setLoadingUser(false);
     }
 
     loadUser();
   }, []);
+
+  function clearPendingEmailNotice() {
+    window.localStorage.removeItem(PENDING_EMAIL_KEY);
+    setPendingEmail("");
+    setEmailNotice("");
+  }
 
   async function handleEmailUpdate(event) {
     event.preventDefault();
@@ -161,12 +221,17 @@ export default function AdminSettings() {
     const nextEmail = email.trim();
 
     if (!nextEmail) {
-      setEmailError("Enter a valid email address.");
+      setEmailError("Enter a new email address.");
       return;
     }
 
     if (nextEmail === user?.email) {
-      setEmailError("This email already matches the current admin account email.");
+      setEmailError("This email already matches the current login email.");
+      return;
+    }
+
+    if (nextEmail === pendingEmail) {
+      setEmailError("This email is already pending confirmation.");
       return;
     }
 
@@ -175,12 +240,26 @@ export default function AdminSettings() {
     setSavingEmail(false);
 
     if (error) {
-      setEmailError(error.message || "Email could not be updated.");
+      setEmailError(error.message || "Email update could not be requested.");
       return;
     }
 
-    setUser(data?.user || user);
-    setEmailNotice("Email update requested. If confirmation is required, check the new email inbox to complete the change.");
+    const updatedUser = data?.user || user;
+    const confirmedImmediately = updatedUser?.email === nextEmail;
+
+    setUser(updatedUser);
+    setEmail("");
+
+    if (confirmedImmediately) {
+      window.localStorage.removeItem(PENDING_EMAIL_KEY);
+      setPendingEmail("");
+      setEmailNotice("Email changed successfully. Use the new email the next time you sign in.");
+      return;
+    }
+
+    window.localStorage.setItem(PENDING_EMAIL_KEY, nextEmail);
+    setPendingEmail(nextEmail);
+    setEmailNotice("Email change is pending confirmation. Keep using the current login email until the confirmation flow is complete.");
   }
 
   async function handlePasswordUpdate(event) {
@@ -234,23 +313,24 @@ export default function AdminSettings() {
         <div className="admin-settings-grid">
           <SettingsCard
             title="Account Email"
-            description="Update the email address used to sign into the admin platform. Depending on Supabase settings, the new email may need confirmation before it becomes active."
+            description="Request an email change for the admin login. The current email remains active until the confirmation flow is completed."
           >
             <Notice type="success">{emailNotice}</Notice>
             <Notice type="error">{emailError}</Notice>
+            <PendingEmailNotice pendingEmail={pendingEmail} onClear={clearPendingEmailNotice} />
             <form onSubmit={handleEmailUpdate} style={{ display: "grid", gap: "1rem" }}>
               <label>
-                <FieldLabel>Current Email</FieldLabel>
+                <FieldLabel>Current Login Email</FieldLabel>
                 <input value={loadingUser ? "Loading..." : user?.email || "Unavailable"} readOnly style={{ ...inputStyle, opacity: 0.72 }} />
               </label>
 
               <label>
-                <FieldLabel>New Email</FieldLabel>
+                <FieldLabel>Request New Email</FieldLabel>
                 <input
                   type="email"
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
-                  placeholder="admin@email.com"
+                  placeholder="new-admin@email.com"
                   autoComplete="email"
                   style={inputStyle}
                 />
@@ -267,7 +347,7 @@ export default function AdminSettings() {
                   opacity: savingEmail || loadingUser ? 0.55 : 1,
                 }}
               >
-                {savingEmail ? "Saving..." : "Update Email"}
+                {savingEmail ? "Saving..." : "Request Email Change"}
               </button>
             </form>
           </SettingsCard>
