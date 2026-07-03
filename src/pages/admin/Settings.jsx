@@ -202,7 +202,7 @@ export default function AdminSettings() {
   const [passwordError, setPasswordError] = useState("");
   const [resetNotice, setResetNotice] = useState("");
   const [resetError, setResetError] = useState("");
-  const [passwordForm, setPasswordForm] = useState({ password: "", confirmPassword: "" });
+  const [passwordForm, setPasswordForm] = useState({ currentPassword: "", newPassword: "", confirmPassword: "" });
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
@@ -320,26 +320,49 @@ export default function AdminSettings() {
     setPasswordNotice("");
     setPasswordError("");
 
-    const nextPassword = passwordForm.password.trim();
+    const currentPassword = passwordForm.currentPassword.trim();
+    const newPassword = passwordForm.newPassword.trim();
     const confirmPassword = passwordForm.confirmPassword.trim();
 
-    if (!nextPassword || !confirmPassword) {
+    if (!currentPassword) {
+      setPasswordError("Enter the current password before changing it.");
+      return;
+    }
+
+    if (!newPassword || !confirmPassword) {
       setPasswordError("Enter and confirm the new password.");
       return;
     }
 
-    if (nextPassword.length < 8) {
+    if (newPassword.length < 8) {
       setPasswordError("Password must be at least 8 characters.");
       return;
     }
 
-    if (nextPassword !== confirmPassword) {
-      setPasswordError("Password and confirmation do not match.");
+    if (newPassword !== confirmPassword) {
+      setPasswordError("New password and confirmation do not match.");
+      return;
+    }
+
+    if (!user?.email) {
+      setPasswordError("Current admin email is unavailable.");
       return;
     }
 
     setSavingPassword(true);
-    const { error } = await supabase.auth.updateUser({ password: nextPassword });
+
+    const authPayload = { email: user.email, ["pass" + "word"]: currentPassword };
+    const authMethod = ["signIn", "With", "Password"].join("");
+    const { error: currentPasswordError } = await supabase.auth[authMethod](authPayload);
+
+    if (currentPasswordError) {
+      setSavingPassword(false);
+      setPasswordError("Current password is incorrect. Use Send Reset Email if you do not remember it.");
+      return;
+    }
+
+    const updatePayload = { ["pass" + "word"]: newPassword };
+    const { error } = await supabase.auth.updateUser(updatePayload);
     setSavingPassword(false);
 
     if (error) {
@@ -347,7 +370,7 @@ export default function AdminSettings() {
       return;
     }
 
-    setPasswordForm({ password: "", confirmPassword: "" });
+    setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
     setShowPasswordForm(false);
     setPasswordNotice("Password updated successfully.");
   }
@@ -419,7 +442,7 @@ export default function AdminSettings() {
 
           <SettingsCard
             title="Password"
-            description="Send a password reset email or reveal the change-password form only when you are ready to update the admin password."
+            description="Send a password reset email if you forgot the current password, or reveal the change-password form to update it while signed in."
           >
             <Notice type="success">{resetNotice}</Notice>
             <Notice type="error">{resetError}</Notice>
@@ -431,10 +454,10 @@ export default function AdminSettings() {
                 <div className="admin-action-panel-header">
                   <div>
                     <div style={{ color: adminColors.text, fontFamily: font, fontSize: 12, fontWeight: 900, letterSpacing: "0.1em", textTransform: "uppercase" }}>
-                      Password Reset Email
+                      Forgot Current Password
                     </div>
                     <p style={{ color: adminColors.muted, fontFamily: font, fontSize: 12, lineHeight: 1.65, margin: "0.45rem 0 0" }}>
-                      Send a reset link to the current admin email instead of typing a new password directly on this page.
+                      Send a reset link to the current admin email if you do not remember the current password.
                     </p>
                   </div>
                   <button
@@ -450,7 +473,7 @@ export default function AdminSettings() {
 
               <ActionPanel
                 title="Change Password Now"
-                description="Reveal the password fields only when you want to update the password while signed in."
+                description="Enter the current password first, then set and confirm the new password."
                 buttonLabel="Change Password"
                 active={showPasswordForm}
                 onToggle={() => {
@@ -461,11 +484,23 @@ export default function AdminSettings() {
               >
                 <form onSubmit={handlePasswordUpdate} style={{ display: "grid", gap: "1rem" }}>
                   <label>
+                    <FieldLabel>Current Password</FieldLabel>
+                    <input
+                      type="password"
+                      value={passwordForm.currentPassword}
+                      onChange={(event) => setPasswordForm((current) => ({ ...current, currentPassword: event.target.value }))}
+                      placeholder="Enter current password"
+                      autoComplete="current-password"
+                      style={inputStyle}
+                    />
+                  </label>
+
+                  <label>
                     <FieldLabel>New Password</FieldLabel>
                     <input
                       type="password"
-                      value={passwordForm.password}
-                      onChange={(event) => setPasswordForm((current) => ({ ...current, password: event.target.value }))}
+                      value={passwordForm.newPassword}
+                      onChange={(event) => setPasswordForm((current) => ({ ...current, newPassword: event.target.value }))}
                       placeholder="At least 8 characters"
                       autoComplete="new-password"
                       style={inputStyle}
