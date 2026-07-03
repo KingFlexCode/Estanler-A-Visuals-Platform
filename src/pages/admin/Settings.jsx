@@ -155,7 +155,7 @@ function PendingEmailNotice({ pendingEmail, onClear }) {
         Pending new email: <strong>{pendingEmail}</strong>
       </div>
       <div style={{ color: adminColors.muted, marginTop: 6 }}>
-        Confirm the request from the current login email first, then confirm it from the new email. The current login email stays active until both confirmations are complete.
+        Confirm both email messages. After both confirmations are complete, sign out and sign back in with the new email. The current login email stays active until that sign-out and sign-in step is complete.
       </div>
       <button type="button" onClick={onClear} style={{ ...secondaryButton, marginTop: 12, padding: "9px 11px" }}>
         Clear Pending Notice
@@ -223,7 +223,7 @@ export default function AdminSettings() {
       if (storedPendingEmail && storedPendingEmail === currentEmail) {
         window.localStorage.removeItem(PENDING_EMAIL_KEY);
         setPendingEmail("");
-        setEmailNotice("Email change completed.");
+        setEmailNotice("Email change completed. The new login email is now active.");
       } else {
         setPendingEmail(storedPendingEmail);
       }
@@ -289,7 +289,7 @@ export default function AdminSettings() {
 
     window.localStorage.setItem(PENDING_EMAIL_KEY, nextEmail);
     setPendingEmail(nextEmail);
-    setEmailNotice("Email change requested. Confirm the old email first, then confirm the new email before signing in with the new address.");
+    setEmailNotice("Email change requested. Confirm both email messages, then sign out and sign back in with the new email.");
   }
 
   async function handlePasswordResetEmail() {
@@ -367,7 +367,7 @@ export default function AdminSettings() {
         <div className="admin-settings-grid">
           <SettingsCard
             title="Account Email"
-            description="Request an email change for the admin login. The current email remains active until the old email and new email confirmations are completed."
+            description="Request an email change for the admin login. The current email remains active until both confirmation emails are confirmed and you sign back in with the new email."
           >
             <Notice type="success">{emailNotice}</Notice>
             <Notice type="error">{emailError}</Notice>
