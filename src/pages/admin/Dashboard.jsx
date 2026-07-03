@@ -20,6 +20,7 @@ const navLinks = [
   { label: "Portfolio", to: "/admin/portfolio", match: (path) => path.startsWith("/admin/portfolio") },
   { label: "Galleries", to: "/admin/galleries", match: (path) => path.startsWith("/admin/galleries") },
   { label: "Inquiries", to: "/admin/inquiries", match: (path) => path.startsWith("/admin/inquiries") },
+  { label: "Settings", to: "/admin/settings", match: (path) => path.startsWith("/admin/settings") },
 ];
 
 function AdminNav({ onSignOut }) {
@@ -166,7 +167,7 @@ function AdminNav({ onSignOut }) {
           padding: 0;
         }
 
-        @media (max-width: 840px) {
+        @media (max-width: 920px) {
           .admin-platform-nav__inner {
             align-items: stretch;
             flex-direction: column;
@@ -204,17 +205,17 @@ export { AdminNav };
 
 function CountCard({ card, loading }) {
   const displayValue = loading ? "—" : card.value;
-  const empty = !loading && !card.unavailable && Number(card.value) === 0;
+  const empty = !loading && Number(card.value) === 0;
 
   return (
     <Link to={card.to} className="admin-dashboard-card" aria-label={card.label}>
       <div className="admin-dashboard-card__eyebrow">{card.kicker}</div>
       <div className="admin-dashboard-card__value" style={{ color: card.color }}>
-        {card.unavailable ? "—" : displayValue}
+        {displayValue}
       </div>
       <div className="admin-dashboard-card__label">{card.label}</div>
       <div className="admin-dashboard-card__meta">
-        {loading ? "Loading count..." : card.unavailable ? "Count unavailable" : empty ? card.emptyText : card.meta}
+        {loading ? "Loading count..." : empty ? card.emptyText : card.meta}
       </div>
     </Link>
   );
@@ -222,15 +223,16 @@ function CountCard({ card, loading }) {
 
 function QuickAction({ to, target, title, description, variant = "secondary" }) {
   return (
-    <Link
-      to={to}
-      target={target}
-      className={`admin-quick-action ${variant === "primary" ? "is-primary" : ""}`}
-    >
+    <Link to={to} target={target} className={`admin-quick-action ${variant === "primary" ? "is-primary" : ""}`}>
       <span>{title}</span>
       <small>{description}</small>
     </Link>
   );
+}
+
+function getCount(result) {
+  if (result.status !== "fulfilled" || result.value.error) return 0;
+  return result.value.count || 0;
 }
 
 export default function Dashboard() {
@@ -261,18 +263,16 @@ export default function Dashboard() {
         supabase.from("inquiries").select("*", { count: "exact", head: true }).eq("status", "new"),
       ]);
 
-      const [portfolioResult, featuredResult, galleriesResult, inquiriesResult] = requests;
-      const results = requests.map((result) => (result.status === "fulfilled" ? result.value : { count: 0, error: result.reason }));
-      const errors = results.map((result) => result.error).filter(Boolean);
+      const hasError = requests.some((result) => result.status === "rejected" || result.value?.error);
 
       setStats({
-        portfolioImages: portfolioResult.status === "fulfilled" ? portfolioResult.value.count || 0 : 0,
-        featuredImages: featuredResult.status === "fulfilled" ? featuredResult.value.count || 0 : 0,
-        clientGalleries: galleriesResult.status === "fulfilled" ? galleriesResult.value.count || 0 : 0,
-        newInquiries: inquiriesResult.status === "fulfilled" ? inquiriesResult.value.count || 0 : 0,
+        portfolioImages: getCount(requests[0]),
+        featuredImages: getCount(requests[1]),
+        clientGalleries: getCount(requests[2]),
+        newInquiries: getCount(requests[3]),
       });
 
-      if (errors.length > 0) {
+      if (hasError) {
         setStatsError("Some dashboard counts could not load. Refresh the page or check Supabase if this continues.");
       }
 
@@ -292,7 +292,6 @@ export default function Dashboard() {
       color: COLORS.gold,
       meta: "Total visible and managed image records",
       emptyText: "No portfolio images yet",
-      unavailable: Boolean(statsError && !loadingStats),
     },
     {
       kicker: "Portfolio",
@@ -302,7 +301,6 @@ export default function Dashboard() {
       color: adminColors.text,
       meta: "Images marked for homepage and highlights",
       emptyText: "No featured images selected",
-      unavailable: Boolean(statsError && !loadingStats),
     },
     {
       kicker: "Clients",
@@ -312,7 +310,6 @@ export default function Dashboard() {
       color: "#60a5fa",
       meta: "Total client gallery collections",
       emptyText: "No client galleries yet",
-      unavailable: Boolean(statsError && !loadingStats),
     },
     {
       kicker: "Leads",
@@ -322,7 +319,6 @@ export default function Dashboard() {
       color: "#4ade80",
       meta: "New inquiries waiting for review",
       emptyText: "No new inquiries",
-      unavailable: Boolean(statsError && !loadingStats),
     },
   ];
 
@@ -331,13 +327,11 @@ export default function Dashboard() {
       <AdminNav onSignOut={handleSignOut} />
       <main className="admin-dashboard-shell">
         <section className="admin-dashboard-hero">
-          <div>
-            <div className="admin-dashboard-kicker">Platform Overview</div>
-            <h1 className="admin-dashboard-title">Dashboard</h1>
-            <p className="admin-dashboard-copy">
-              A central place to monitor portfolio content, client galleries, and new booking activity.
-            </p>
-          </div>
+          <div className="admin-dashboard-kicker">Platform Overview</div>
+          <h1 className="admin-dashboard-title">Dashboard</h1>
+          <p className="admin-dashboard-copy">
+            A central place to monitor portfolio content, client galleries, and new booking activity.
+          </p>
         </section>
 
         {statsError && <div className="admin-dashboard-alert">{statsError}</div>}
@@ -360,23 +354,9 @@ export default function Dashboard() {
             <h2 className="admin-dashboard-section-title">Start from here</h2>
           </div>
           <div className="admin-dashboard-action-grid">
-            <QuickAction
-              to="/admin/galleries"
-              title="New Gallery"
-              description="Open the client gallery workspace"
-              variant="primary"
-            />
-            <QuickAction
-              to="/admin/portfolio"
-              title="Upload Portfolio Images"
-              description="Manage public gallery images"
-            />
-            <QuickAction
-              to="/"
-              target="_blank"
-              title="View Site"
-              description="Open the public website"
-            />
+            <QuickAction to="/admin/galleries" title="New Gallery" description="Open the client gallery workspace" variant="primary" />
+            <QuickAction to="/admin/portfolio" title="Upload Portfolio Images" description="Manage public gallery images" />
+            <QuickAction to="/" target="_blank" title="View Site" description="Open the public website" />
           </div>
         </section>
       </main>
