@@ -10,13 +10,13 @@ Supabase Dashboard → Authentication → Emails / Templates
 
 ## Important Behavior
 
-Supabase's default secure email change flow sends confirmation emails to both the current email and the new email. The admin should confirm the current email first, then confirm the new email.
+Supabase's default secure email change flow sends confirmation emails to both the current email and the new email. Based on testing, the confirmation order does not appear to be the key part. The important part is that both emails must be confirmed, then the admin must sign out and sign back in with the new email.
 
 With Supabase's default hosted Auth flow, the new-email confirmation email cannot be delayed until after the current email is confirmed. To make that exact sequence happen, we would need a custom server-side email-change request flow using a secure backend, a request table, and a custom email provider.
 
 ## Change Email Address Template
 
-Use this for the Supabase `Change email address` template.
+Use this for the Supabase `Change email address` template if custom email templates become available.
 
 Subject:
 
@@ -37,7 +37,7 @@ HTML body:
 </p>
 
 <p>
-  To complete this change, confirm the request from the current email first, then confirm the request from the new email.
+  To complete this change, confirm both email messages. After both confirmations are complete, sign out and sign back in with the new email.
 </p>
 
 <p>
@@ -59,7 +59,7 @@ An admin email change was requested for Estanler A Visuals.
 Current login email: {{ .Email }}
 Requested new email: {{ .NewEmail }}
 
-To complete this change, confirm the request from the current email first, then confirm the request from the new email.
+To complete this change, confirm both email messages. After both confirmations are complete, sign out and sign back in with the new email.
 
 Confirm email change:
 {{ .ConfirmationURL }}
@@ -69,7 +69,7 @@ If you did not request this change, do not click the link. Keep using the curren
 
 ## Reset Password Template
 
-Use this for the Supabase `Reset password` template.
+Use this for the Supabase `Reset password` template if custom email templates become available.
 
 Subject:
 
