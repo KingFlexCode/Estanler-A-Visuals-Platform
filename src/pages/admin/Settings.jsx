@@ -39,6 +39,19 @@ const buttonBase = {
   textTransform: "uppercase",
 };
 
+const secondaryButton = {
+  ...buttonBase,
+  background: "transparent",
+  color: COLORS.gold,
+};
+
+const primaryButton = {
+  ...buttonBase,
+  background: COLORS.gold,
+  borderColor: COLORS.gold,
+  color: adminColors.bg,
+};
+
 function FieldLabel({ children }) {
   return (
     <span
@@ -126,7 +139,7 @@ function PendingEmailNotice({ pendingEmail, onClear }) {
     <div
       style={{
         background: "rgba(200,169,107,0.08)",
-        border: `1px solid rgba(200,169,107,0.34)`,
+        border: "1px solid rgba(200,169,107,0.34)",
         color: adminColors.text,
         fontFamily: font,
         fontSize: 13,
@@ -142,21 +155,32 @@ function PendingEmailNotice({ pendingEmail, onClear }) {
         Pending new email: <strong>{pendingEmail}</strong>
       </div>
       <div style={{ color: adminColors.muted, marginTop: 6 }}>
-        Your current login email stays active until the email confirmation is completed. Check the new email inbox and, depending on Supabase settings, the old email inbox too.
+        Confirm the request from the current login email first, then confirm it from the new email. The current login email stays active until both confirmations are complete.
       </div>
-      <button
-        type="button"
-        onClick={onClear}
-        style={{
-          ...buttonBase,
-          background: "transparent",
-          color: COLORS.gold,
-          marginTop: 12,
-          padding: "9px 11px",
-        }}
-      >
+      <button type="button" onClick={onClear} style={{ ...secondaryButton, marginTop: 12, padding: "9px 11px" }}>
         Clear Pending Notice
       </button>
+    </div>
+  );
+}
+
+function ActionPanel({ title, description, buttonLabel, active, onToggle, children }) {
+  return (
+    <div style={{ border: `1px solid ${adminColors.border}`, padding: "1rem" }}>
+      <div className="admin-action-panel-header">
+        <div>
+          <div style={{ color: adminColors.text, fontFamily: font, fontSize: 12, fontWeight: 900, letterSpacing: "0.1em", textTransform: "uppercase" }}>
+            {title}
+          </div>
+          <p style={{ color: adminColors.muted, fontFamily: font, fontSize: 12, lineHeight: 1.65, margin: "0.45rem 0 0" }}>
+            {description}
+          </p>
+        </div>
+        <button type="button" onClick={onToggle} style={active ? secondaryButton : primaryButton}>
+          {active ? "Cancel" : buttonLabel}
+        </button>
+      </div>
+      {active && <div style={{ marginTop: "1rem" }}>{children}</div>}
     </div>
   );
 }
@@ -167,12 +191,17 @@ export default function AdminSettings() {
   const [loadingUser, setLoadingUser] = useState(true);
   const [email, setEmail] = useState("");
   const [pendingEmail, setPendingEmail] = useState("");
+  const [showEmailForm, setShowEmailForm] = useState(false);
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [savingEmail, setSavingEmail] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
+  const [sendingReset, setSendingReset] = useState(false);
   const [emailNotice, setEmailNotice] = useState("");
   const [emailError, setEmailError] = useState("");
   const [passwordNotice, setPasswordNotice] = useState("");
   const [passwordError, setPasswordError] = useState("");
+  const [resetNotice, setResetNotice] = useState("");
+  const [resetError, setResetError] = useState("");
   const [passwordForm, setPasswordForm] = useState({ password: "", confirmPassword: "" });
 
   const handleSignOut = async () => {
@@ -249,6 +278,7 @@ export default function AdminSettings() {
 
     setUser(updatedUser);
     setEmail("");
+    setShowEmailForm(false);
 
     if (confirmedImmediately) {
       window.localStorage.removeItem(PENDING_EMAIL_KEY);
@@ -259,7 +289,30 @@ export default function AdminSettings() {
 
     window.localStorage.setItem(PENDING_EMAIL_KEY, nextEmail);
     setPendingEmail(nextEmail);
-    setEmailNotice("Email change is pending confirmation. Keep using the current login email until the confirmation flow is complete.");
+    setEmailNotice("Email change requested. Confirm the old email first, then confirm the new email before signing in with the new address.");
+  }
+
+  async function handlePasswordResetEmail() {
+    setResetNotice("");
+    setResetError("");
+
+    if (!user?.email) {
+      setResetError("Current admin email is unavailable.");
+      return;
+    }
+
+    setSendingReset(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
+      redirectTo: `${window.location.origin}/admin/settings`,
+    });
+    setSendingReset(false);
+
+    if (error) {
+      setResetError(error.message || "Password reset email could not be sent.");
+      return;
+    }
+
+    setResetNotice(`Password reset email sent to ${user.email}.`);
   }
 
   async function handlePasswordUpdate(event) {
@@ -295,6 +348,7 @@ export default function AdminSettings() {
     }
 
     setPasswordForm({ password: "", confirmPassword: "" });
+    setShowPasswordForm(false);
     setPasswordNotice("Password updated successfully.");
   }
 
@@ -313,90 +367,136 @@ export default function AdminSettings() {
         <div className="admin-settings-grid">
           <SettingsCard
             title="Account Email"
-            description="Request an email change for the admin login. The current email remains active until the confirmation flow is completed."
+            description="Request an email change for the admin login. The current email remains active until the old email and new email confirmations are completed."
           >
             <Notice type="success">{emailNotice}</Notice>
             <Notice type="error">{emailError}</Notice>
             <PendingEmailNotice pendingEmail={pendingEmail} onClear={clearPendingEmailNotice} />
-            <form onSubmit={handleEmailUpdate} style={{ display: "grid", gap: "1rem" }}>
-              <label>
-                <FieldLabel>Current Login Email</FieldLabel>
-                <input value={loadingUser ? "Loading..." : user?.email || "Unavailable"} readOnly style={{ ...inputStyle, opacity: 0.72 }} />
-              </label>
+            <label>
+              <FieldLabel>Current Login Email</FieldLabel>
+              <input value={loadingUser ? "Loading..." : user?.email || "Unavailable"} readOnly style={{ ...inputStyle, opacity: 0.72 }} />
+            </label>
 
-              <label>
-                <FieldLabel>Request New Email</FieldLabel>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  placeholder="new-admin@email.com"
-                  autoComplete="email"
-                  style={inputStyle}
-                />
-              </label>
-
-              <button
-                type="submit"
-                disabled={savingEmail || loadingUser}
-                style={{
-                  ...buttonBase,
-                  background: COLORS.gold,
-                  borderColor: COLORS.gold,
-                  color: adminColors.bg,
-                  opacity: savingEmail || loadingUser ? 0.55 : 1,
+            <div style={{ marginTop: "1rem" }}>
+              <ActionPanel
+                title="Change Login Email"
+                description="Show the new email field only when you are ready to request a login email change."
+                buttonLabel="Change Email"
+                active={showEmailForm}
+                onToggle={() => {
+                  setEmailError("");
+                  setEmailNotice("");
+                  setShowEmailForm((current) => !current);
                 }}
               >
-                {savingEmail ? "Saving..." : "Request Email Change"}
-              </button>
-            </form>
+                <form onSubmit={handleEmailUpdate} style={{ display: "grid", gap: "1rem" }}>
+                  <label>
+                    <FieldLabel>Enter New Email</FieldLabel>
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(event) => setEmail(event.target.value)}
+                      placeholder="new-admin@email.com"
+                      autoComplete="email"
+                      style={inputStyle}
+                    />
+                  </label>
+
+                  <button
+                    type="submit"
+                    disabled={savingEmail || loadingUser}
+                    style={{
+                      ...primaryButton,
+                      opacity: savingEmail || loadingUser ? 0.55 : 1,
+                    }}
+                  >
+                    {savingEmail ? "Sending..." : "Send Email Change Request"}
+                  </button>
+                </form>
+              </ActionPanel>
+            </div>
           </SettingsCard>
 
           <SettingsCard
             title="Password"
-            description="Set a new admin password. The new password must be confirmed before it is sent to Supabase Auth."
+            description="Send a password reset email or reveal the change-password form only when you are ready to update the admin password."
           >
+            <Notice type="success">{resetNotice}</Notice>
+            <Notice type="error">{resetError}</Notice>
             <Notice type="success">{passwordNotice}</Notice>
             <Notice type="error">{passwordError}</Notice>
-            <form onSubmit={handlePasswordUpdate} style={{ display: "grid", gap: "1rem" }}>
-              <label>
-                <FieldLabel>New Password</FieldLabel>
-                <input
-                  type="password"
-                  value={passwordForm.password}
-                  onChange={(event) => setPasswordForm((current) => ({ ...current, password: event.target.value }))}
-                  placeholder="At least 8 characters"
-                  autoComplete="new-password"
-                  style={inputStyle}
-                />
-              </label>
 
-              <label>
-                <FieldLabel>Confirm New Password</FieldLabel>
-                <input
-                  type="password"
-                  value={passwordForm.confirmPassword}
-                  onChange={(event) => setPasswordForm((current) => ({ ...current, confirmPassword: event.target.value }))}
-                  placeholder="Confirm password"
-                  autoComplete="new-password"
-                  style={inputStyle}
-                />
-              </label>
+            <div style={{ display: "grid", gap: "1rem" }}>
+              <div style={{ border: `1px solid ${adminColors.border}`, padding: "1rem" }}>
+                <div className="admin-action-panel-header">
+                  <div>
+                    <div style={{ color: adminColors.text, fontFamily: font, fontSize: 12, fontWeight: 900, letterSpacing: "0.1em", textTransform: "uppercase" }}>
+                      Password Reset Email
+                    </div>
+                    <p style={{ color: adminColors.muted, fontFamily: font, fontSize: 12, lineHeight: 1.65, margin: "0.45rem 0 0" }}>
+                      Send a reset link to the current admin email instead of typing a new password directly on this page.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handlePasswordResetEmail}
+                    disabled={sendingReset || loadingUser}
+                    style={{ ...secondaryButton, opacity: sendingReset || loadingUser ? 0.55 : 1 }}
+                  >
+                    {sendingReset ? "Sending..." : "Send Reset Email"}
+                  </button>
+                </div>
+              </div>
 
-              <button
-                type="submit"
-                disabled={savingPassword}
-                style={{
-                  ...buttonBase,
-                  background: COLORS.gold,
-                  borderColor: COLORS.gold,
-                  color: adminColors.bg,
-                  opacity: savingPassword ? 0.55 : 1,
+              <ActionPanel
+                title="Change Password Now"
+                description="Reveal the password fields only when you want to update the password while signed in."
+                buttonLabel="Change Password"
+                active={showPasswordForm}
+                onToggle={() => {
+                  setPasswordError("");
+                  setPasswordNotice("");
+                  setShowPasswordForm((current) => !current);
                 }}
               >
-                {savingPassword ? "Saving..." : "Update Password"}
-              </button>
-            </form>
+                <form onSubmit={handlePasswordUpdate} style={{ display: "grid", gap: "1rem" }}>
+                  <label>
+                    <FieldLabel>New Password</FieldLabel>
+                    <input
+                      type="password"
+                      value={passwordForm.password}
+                      onChange={(event) => setPasswordForm((current) => ({ ...current, password: event.target.value }))}
+                      placeholder="At least 8 characters"
+                      autoComplete="new-password"
+                      style={inputStyle}
+                    />
+                  </label>
+
+                  <label>
+                    <FieldLabel>Confirm New Password</FieldLabel>
+                    <input
+                      type="password"
+                      value={passwordForm.confirmPassword}
+                      onChange={(event) => setPasswordForm((current) => ({ ...current, confirmPassword: event.target.value }))}
+                      placeholder="Confirm password"
+                      autoComplete="new-password"
+                      style={inputStyle}
+                    />
+                  </label>
+
+                  <button
+                    type="submit"
+                    disabled={savingPassword}
+                    style={{
+                      ...primaryButton,
+                      opacity: savingPassword ? 0.55 : 1,
+                    }}
+                  >
+                    {savingPassword ? "Saving..." : "Update Password"}
+                  </button>
+                </form>
+              </ActionPanel>
+            </div>
           </SettingsCard>
         </div>
       </main>
@@ -443,9 +543,22 @@ export default function AdminSettings() {
           grid-template-columns: repeat(2, minmax(0, 1fr));
         }
 
-        @media (max-width: 860px) {
+        .admin-action-panel-header {
+          align-items: flex-start;
+          display: flex;
+          gap: 1rem;
+          justify-content: space-between;
+        }
+
+        @media (max-width: 980px) {
           .admin-settings-grid {
             grid-template-columns: 1fr;
+          }
+        }
+
+        @media (max-width: 620px) {
+          .admin-action-panel-header {
+            flex-direction: column;
           }
         }
       `}</style>
