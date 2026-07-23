@@ -1,5 +1,11 @@
 import { useEffect } from "react";
-import { BrowserRouter, Navigate, Routes, Route, useLocation } from "react-router-dom";
+import {
+  BrowserRouter,
+  Navigate,
+  Routes,
+  Route,
+  useLocation,
+} from "react-router-dom";
 import Nav from "./components/Nav";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Home from "./pages/Home";
@@ -19,28 +25,131 @@ import AdminSettings from "./pages/admin/Settings";
 
 function ScrollToTop() {
   const { pathname } = useLocation();
-  useEffect(() => { window.scrollTo(0, 0); }, [pathname]);
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
   return null;
 }
 
 function FontLoader() {
   useEffect(() => {
     const link = document.createElement("link");
-    link.href = "https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@300;400;500;600;700&display=swap";
+    link.href =
+      "https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@300;400;500;600;700&display=swap";
     link.rel = "stylesheet";
     document.head.appendChild(link);
   }, []);
   return null;
 }
 
-const NO_NAV_PATHS = ["/admin", "/admin/login", "/admin/galleries", "/admin/portfolio", "/admin/inquiries", "/admin/settings"];
-function AdminPage({ children }) { return <ProtectedRoute>{children}</ProtectedRoute>; }
-function NotFound() { return <div style={{ minHeight: "100vh", background: "#0A0A0A", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Playfair Display', serif", fontSize: "1.5rem", color: "#fff" }}>Page Not Found</div>; }
+const NO_NAV_PATHS = [
+  "/admin",
+  "/admin/login",
+  "/admin/galleries",
+  "/admin/portfolio",
+  "/admin/inquiries",
+  "/admin/settings",
+];
+function AdminPage({ children }) {
+  return <ProtectedRoute>{children}</ProtectedRoute>;
+}
+function NotFound() {
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#0A0A0A",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontFamily: "'Playfair Display', serif",
+        fontSize: "1.5rem",
+        color: "#fff",
+      }}
+    >
+      Page Not Found
+    </div>
+  );
+}
 
 function Layout() {
   const { pathname } = useLocation();
-  const showNav = !NO_NAV_PATHS.some((path) => pathname.startsWith(path)) && !pathname.startsWith("/gallery/");
-  return <><FontLoader /><ScrollToTop />{showNav && <Nav />}<Routes><Route path="/" element={<Home />} /><Route path="/gallery" element={<Gallery />} /><Route path="/work" element={<Navigate to="/gallery" replace />} /><Route path="/services" element={<Services />} /><Route path="/about" element={<About />} /><Route path="/book" element={<Book />} /><Route path="/shop" element={<Shop />} /><Route path="/gallery/:slug" element={<ClientGalleryViewer />} /><Route path="/admin/login" element={<AdminLogin />} /><Route path="/admin" element={<AdminPage><Dashboard /></AdminPage>} /><Route path="/admin/galleries" element={<AdminPage><Galleries /></AdminPage>} /><Route path="/admin/galleries/:galleryId" element={<AdminPage><GalleryEditor /></AdminPage>} /><Route path="/admin/portfolio" element={<AdminPage><PortfolioAdmin /></AdminPage>} /><Route path="/admin/inquiries" element={<AdminPage><Inquiries /></AdminPage>} /><Route path="/admin/settings" element={<AdminPage><AdminSettings /></AdminPage>} /><Route path="*" element={<NotFound />} /></Routes></>;
+  const showNav =
+    !NO_NAV_PATHS.some((path) => pathname.startsWith(path)) &&
+    !pathname.startsWith("/gallery/");
+  return (
+    <>
+      <FontLoader />
+      <ScrollToTop />
+      {showNav && <Nav />}
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/gallery" element={<Gallery />} />
+        <Route path="/work" element={<Navigate to="/gallery" replace />} />
+        <Route path="/services" element={<Services />} />
+        <Route path="/about" element={<About />} />
+        <Route path="/book" element={<Book />} />
+        <Route path="/shop" element={<Shop />} />
+        <Route path="/gallery/:slug" element={<ClientGalleryViewer />} />
+        <Route path="/admin/login" element={<AdminLogin />} />
+        <Route
+          path="/admin"
+          element={
+            <AdminPage>
+              <Dashboard />
+            </AdminPage>
+          }
+        />
+        <Route
+          path="/admin/galleries"
+          element={
+            <AdminPage>
+              <Galleries />
+            </AdminPage>
+          }
+        />
+        <Route
+          path="/admin/galleries/:galleryId"
+          element={
+            <AdminPage>
+              <GalleryEditor />
+            </AdminPage>
+          }
+        />
+        <Route
+          path="/admin/portfolio"
+          element={
+            <AdminPage>
+              <PortfolioAdmin />
+            </AdminPage>
+          }
+        />
+        <Route
+          path="/admin/inquiries"
+          element={
+            <AdminPage>
+              <Inquiries />
+            </AdminPage>
+          }
+        />
+        <Route
+          path="/admin/settings"
+          element={
+            <AdminPage>
+              <AdminSettings />
+            </AdminPage>
+          }
+        />
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </>
+  );
 }
 
-export default function App() { return <BrowserRouter><Layout /></BrowserRouter>; }
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Layout />
+    </BrowserRouter>
+  );
+}
