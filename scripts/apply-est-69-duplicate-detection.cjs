@@ -84,7 +84,7 @@ const replacement = `  async function uploadSelectedFiles(fileList) {
       if (fileHash) fileHashes.set(index, fileHash);
 
       const hashDuplicate = Boolean(fileHash && (existingHashKeys.has(fileHash) || pendingHashKeys.has(fileHash)));
-      const fallbackDuplicate = Boolean(!fileHash && fallbackKey && (existingFallbackKeys.has(fallbackKey) || pendingFallbackKeys.has(fallbackKey)));
+      const fallbackDuplicate = Boolean(fallbackKey && (existingFallbackKeys.has(fallbackKey) || pendingFallbackKeys.has(fallbackKey)));
 
       if (hashDuplicate || fallbackDuplicate) {
         skippedIndexes.add(index);
