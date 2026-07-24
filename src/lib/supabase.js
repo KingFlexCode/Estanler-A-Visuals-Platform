@@ -47,11 +47,14 @@ async function isDuplicateClientGalleryOriginalUpload(path, file, options = {}) 
   ));
 }
 
-function createDuplicateUploadError() {
+function createDuplicateUploadError(fileName = "") {
+  const displayName = String(fileName || "This image").trim() || "This image";
+
   return {
     name: "DuplicateGalleryImageError",
     code: "DUPLICATE_GALLERY_IMAGE",
-    message: "Skipped duplicate gallery image.",
+    statusCode: 409,
+    message: `Duplicate detected: "${displayName}" is already in this client gallery. The second copy was not added.`,
   };
 }
 
@@ -61,7 +64,7 @@ function wrapClientGalleryBucket(bucket) {
       if (property === "upload") {
         return async (path, file, options = {}) => {
           if (await isDuplicateClientGalleryOriginalUpload(path, file, options)) {
-            return { data: null, error: createDuplicateUploadError() };
+            return { data: null, error: createDuplicateUploadError(file?.name) };
           }
 
           return target.upload(path, file, options);
