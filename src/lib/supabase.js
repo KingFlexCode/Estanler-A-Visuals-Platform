@@ -4,46 +4,120 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const CLIENT_GALLERY_BUCKET = "client-galleries";
 const DUPLICATE_NOTICE_ID = "client-gallery-duplicate-notice";
+const DUPLICATE_INLINE_NOTICE_ID = "client-gallery-duplicate-inline-notice";
 
 const supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
-let duplicateNoticeFileNames = [];
-let duplicateNoticeTimer = null;
 
 function normalizeDuplicateValue(value = "") {
   return String(value || "").trim().toLowerCase();
 }
 
+function getDuplicateMessage(fileName = "") {
+  const displayName = String(fileName || "This image").trim() || "This image";
+  return `“${displayName}” is already in this client gallery. The second copy was not added.`;
+}
+
+function findTextElement(predicate) {
+  if (typeof document === "undefined") return null;
+
+  return Array.from(document.querySelectorAll("div, span, strong, p")).find((element) => {
+    if (element.children.length > 0) return false;
+    return predicate((element.textContent || "").trim());
+  }) || null;
+}
+
+function setElementText(element, value) {
+  if (element && element.textContent !== value) element.textContent = value;
+}
+
+function findUploadProgressPanel(startElement) {
+  let element = startElement;
+
+  while (element && element !== document.body) {
+    const text = element.textContent || "";
+    if (text.includes("Upload Progress") && text.includes("Uploaded:") && text.includes("Skipped:") && text.includes("Failed:")) {
+      return element;
+    }
+    element = element.parentElement;
+  }
+
+  return null;
+}
+
+function syncDuplicateUploadProgress(fileName = "") {
+  if (typeof document === "undefined") return;
+
+  const duplicateMessage = getDuplicateMessage(fileName);
+
+  const applyUpdate = () => {
+    const summary = findTextElement((text) => /^Upload finished with \d+ failed image/.test(text));
+    setElementText(summary, `Duplicate detected: ${duplicateMessage}`);
+
+    const progressTitle = findTextElement((text) => text === "Upload complete");
+    setElementText(progressTitle, "Duplicate detected");
+
+    const skipped = findTextElement((text) => /^Skipped:\s*\d+$/.test(text));
+    const failed = findTextElement((text) => /^Failed:\s*\d+$/.test(text));
+    setElementText(skipped, "Skipped: 1");
+    setElementText(failed, "Failed: 0");
+
+    const progressPanel = findUploadProgressPanel(skipped || failed || progressTitle);
+    if (progressPanel && !document.getElementById(DUPLICATE_INLINE_NOTICE_ID)) {
+      const inlineNotice = document.createElement("div");
+      inlineNotice.id = DUPLICATE_INLINE_NOTICE_ID;
+      inlineNotice.setAttribute("role", "status");
+      inlineNotice.style.marginTop = "12px";
+      inlineNotice.style.border = "1px solid rgba(255, 183, 94, 0.58)";
+      inlineNotice.style.background = "rgba(255, 183, 94, 0.09)";
+      inlineNotice.style.color = "#ffcf9a";
+      inlineNotice.style.fontFamily = "'Inter', sans-serif";
+      inlineNotice.style.fontSize = "13px";
+      inlineNotice.style.lineHeight = "1.55";
+      inlineNotice.style.padding = "12px 14px";
+      inlineNotice.textContent = `Duplicate detected. ${duplicateMessage}`;
+      progressPanel.appendChild(inlineNotice);
+    }
+  };
+
+  applyUpdate();
+
+  const observer = new MutationObserver(applyUpdate);
+  observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+
+  [50, 150, 350, 700, 1200, 2000].forEach((delay) => {
+    window.setTimeout(applyUpdate, delay);
+  });
+
+  window.setTimeout(() => observer.disconnect(), 3000);
+}
+
 function showDuplicateUploadNotice(fileName = "") {
   if (typeof document === "undefined") return;
 
-  const displayName = String(fileName || "This image").trim() || "This image";
-  duplicateNoticeFileNames.push(displayName);
-
+  const duplicateMessage = getDuplicateMessage(fileName);
   const existingNotice = document.getElementById(DUPLICATE_NOTICE_ID);
   if (existingNotice) existingNotice.remove();
-  if (duplicateNoticeTimer) window.clearTimeout(duplicateNoticeTimer);
 
-  const duplicateCount = duplicateNoticeFileNames.length;
   const notice = document.createElement("div");
   notice.id = DUPLICATE_NOTICE_ID;
-  notice.setAttribute("role", "status");
-  notice.setAttribute("aria-live", "polite");
+  notice.setAttribute("role", "alert");
+  notice.setAttribute("aria-live", "assertive");
   notice.style.position = "fixed";
   notice.style.right = "24px";
   notice.style.bottom = "24px";
   notice.style.zIndex = "9999";
-  notice.style.width = "min(420px, calc(100vw - 48px))";
+  notice.style.width = "min(440px, calc(100vw - 48px))";
   notice.style.boxSizing = "border-box";
   notice.style.background = "#17232f";
-  notice.style.border = "1px solid rgba(255, 183, 94, 0.72)";
-  notice.style.boxShadow = "0 18px 50px rgba(0, 0, 0, 0.34)";
+  notice.style.border = "1px solid rgba(255, 183, 94, 0.78)";
+  notice.style.boxShadow = "0 18px 50px rgba(0, 0, 0, 0.4)";
   notice.style.padding = "18px 20px";
   notice.style.color = "#f7f3ed";
   notice.style.fontFamily = "'Inter', sans-serif";
   notice.style.lineHeight = "1.55";
 
   const title = document.createElement("strong");
-  title.textContent = duplicateCount === 1 ? "Duplicate image detected" : "Duplicate images detected";
+  title.textContent = "Duplicate detected";
   title.style.display = "block";
   title.style.color = "#ffb75e";
   title.style.fontSize = "14px";
@@ -52,20 +126,17 @@ function showDuplicateUploadNotice(fileName = "") {
   title.style.textTransform = "uppercase";
 
   const message = document.createElement("span");
-  message.textContent = duplicateCount === 1
-    ? `“${duplicateNoticeFileNames[0]}” is already in this client gallery and was skipped.`
-    : `${duplicateCount} images were already in this client gallery and were skipped. No duplicate copies were added.`;
+  message.textContent = duplicateMessage;
   message.style.display = "block";
   message.style.fontSize = "14px";
 
   notice.append(title, message);
   document.body.appendChild(notice);
+  syncDuplicateUploadProgress(fileName);
 
-  duplicateNoticeTimer = window.setTimeout(() => {
+  window.setTimeout(() => {
     if (notice.isConnected) notice.remove();
-    duplicateNoticeFileNames = [];
-    duplicateNoticeTimer = null;
-  }, 8000);
+  }, 12000);
 }
 
 function getSectionIdFromOriginalPath(path = "") {
@@ -106,13 +177,11 @@ async function isDuplicateClientGalleryOriginalUpload(path, file, options = {}) 
 }
 
 function createDuplicateUploadError(fileName = "") {
-  const displayName = String(fileName || "This image").trim() || "This image";
-
   return {
     name: "DuplicateGalleryImageError",
     code: "DUPLICATE_GALLERY_IMAGE",
     statusCode: 409,
-    message: `Duplicate detected: "${displayName}" is already in this client gallery. The second copy was not added.`,
+    message: `Duplicate detected: ${getDuplicateMessage(fileName)}`,
   };
 }
 
