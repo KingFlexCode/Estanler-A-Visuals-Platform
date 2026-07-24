@@ -23,8 +23,8 @@ function showDuplicateUploadNotice(fileName = "") {
   notice.setAttribute("role", "status");
   notice.setAttribute("aria-live", "polite");
   notice.style.position = "fixed";
-  notice.style.top = "24px";
   notice.style.right = "24px";
+  notice.style.bottom = "24px";
   notice.style.zIndex = "9999";
   notice.style.width = "min(420px, calc(100vw - 48px))";
   notice.style.boxSizing = "border-box";
