@@ -6,6 +6,8 @@ const CLIENT_GALLERY_BUCKET = "client-galleries";
 const DUPLICATE_NOTICE_ID = "client-gallery-duplicate-notice";
 
 const supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
+let duplicateNoticeFileNames = [];
+let duplicateNoticeTimer = null;
 
 function normalizeDuplicateValue(value = "") {
   return String(value || "").trim().toLowerCase();
@@ -15,9 +17,13 @@ function showDuplicateUploadNotice(fileName = "") {
   if (typeof document === "undefined") return;
 
   const displayName = String(fileName || "This image").trim() || "This image";
+  duplicateNoticeFileNames.push(displayName);
+
   const existingNotice = document.getElementById(DUPLICATE_NOTICE_ID);
   if (existingNotice) existingNotice.remove();
+  if (duplicateNoticeTimer) window.clearTimeout(duplicateNoticeTimer);
 
+  const duplicateCount = duplicateNoticeFileNames.length;
   const notice = document.createElement("div");
   notice.id = DUPLICATE_NOTICE_ID;
   notice.setAttribute("role", "status");
@@ -37,7 +43,7 @@ function showDuplicateUploadNotice(fileName = "") {
   notice.style.lineHeight = "1.55";
 
   const title = document.createElement("strong");
-  title.textContent = "Duplicate detected";
+  title.textContent = duplicateCount === 1 ? "Duplicate image detected" : "Duplicate images detected";
   title.style.display = "block";
   title.style.color = "#ffb75e";
   title.style.fontSize = "14px";
@@ -46,15 +52,19 @@ function showDuplicateUploadNotice(fileName = "") {
   title.style.textTransform = "uppercase";
 
   const message = document.createElement("span");
-  message.textContent = `“${displayName}” is already in this client gallery. The second copy was not added.`;
+  message.textContent = duplicateCount === 1
+    ? `“${duplicateNoticeFileNames[0]}” is already in this client gallery and was skipped.`
+    : `${duplicateCount} images were already in this client gallery and were skipped. No duplicate copies were added.`;
   message.style.display = "block";
   message.style.fontSize = "14px";
 
   notice.append(title, message);
   document.body.appendChild(notice);
 
-  window.setTimeout(() => {
+  duplicateNoticeTimer = window.setTimeout(() => {
     if (notice.isConnected) notice.remove();
+    duplicateNoticeFileNames = [];
+    duplicateNoticeTimer = null;
   }, 8000);
 }
 
