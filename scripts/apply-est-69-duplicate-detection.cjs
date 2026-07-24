@@ -3,11 +3,6 @@ const fs = require("fs");
 const filePath = "src/pages/admin/GalleryEditor.jsx";
 let content = fs.readFileSync(filePath, "utf8");
 
-if (content.includes("async function hashFileSha256")) {
-  console.log("EST-69 duplicate detection is already applied.");
-  process.exit(0);
-}
-
 const helperAnchor = `function sanitizeFileName(name = "") {
   return (
     name
@@ -42,11 +37,13 @@ async function hashFileSha256(file) {
 }
 `;
 
-if (!content.includes(helperAnchor)) {
-  throw new Error("Could not find sanitizeFileName helper block.");
-}
+if (!content.includes("async function hashFileSha256")) {
+  if (!content.includes(helperAnchor)) {
+    throw new Error("Could not find sanitizeFileName helper block.");
+  }
 
-content = content.replace(helperAnchor, duplicateHelpers);
+  content = content.replace(helperAnchor, duplicateHelpers);
+}
 
 const start = content.indexOf("  async function uploadSelectedFiles(fileList) {");
 const end = content.indexOf("\n  async function removePhoto(photoId)", start);
@@ -220,4 +217,4 @@ const replacement = `  async function uploadSelectedFiles(fileList) {
 
 content = `${content.slice(0, start)}${replacement}${content.slice(end)}`;
 fs.writeFileSync(filePath, content);
-console.log("EST-69 duplicate detection patch applied to GalleryEditor.jsx.");
+console.log("EST-69 duplicate detection patch applied or refreshed in GalleryEditor.jsx.");
