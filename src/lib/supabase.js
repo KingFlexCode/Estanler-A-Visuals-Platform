@@ -3,11 +3,59 @@ import { createClient } from "@supabase/supabase-js";
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const CLIENT_GALLERY_BUCKET = "client-galleries";
+const DUPLICATE_NOTICE_ID = "client-gallery-duplicate-notice";
 
 const supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
 
 function normalizeDuplicateValue(value = "") {
   return String(value || "").trim().toLowerCase();
+}
+
+function showDuplicateUploadNotice(fileName = "") {
+  if (typeof document === "undefined") return;
+
+  const displayName = String(fileName || "This image").trim() || "This image";
+  const existingNotice = document.getElementById(DUPLICATE_NOTICE_ID);
+  if (existingNotice) existingNotice.remove();
+
+  const notice = document.createElement("div");
+  notice.id = DUPLICATE_NOTICE_ID;
+  notice.setAttribute("role", "status");
+  notice.setAttribute("aria-live", "polite");
+  notice.style.position = "fixed";
+  notice.style.top = "24px";
+  notice.style.right = "24px";
+  notice.style.zIndex = "9999";
+  notice.style.width = "min(420px, calc(100vw - 48px))";
+  notice.style.boxSizing = "border-box";
+  notice.style.background = "#17232f";
+  notice.style.border = "1px solid rgba(255, 183, 94, 0.72)";
+  notice.style.boxShadow = "0 18px 50px rgba(0, 0, 0, 0.34)";
+  notice.style.padding = "18px 20px";
+  notice.style.color = "#f7f3ed";
+  notice.style.fontFamily = "'Inter', sans-serif";
+  notice.style.lineHeight = "1.55";
+
+  const title = document.createElement("strong");
+  title.textContent = "Duplicate detected";
+  title.style.display = "block";
+  title.style.color = "#ffb75e";
+  title.style.fontSize = "14px";
+  title.style.letterSpacing = "0.08em";
+  title.style.marginBottom = "6px";
+  title.style.textTransform = "uppercase";
+
+  const message = document.createElement("span");
+  message.textContent = `“${displayName}” is already in this client gallery. The second copy was not added.`;
+  message.style.display = "block";
+  message.style.fontSize = "14px";
+
+  notice.append(title, message);
+  document.body.appendChild(notice);
+
+  window.setTimeout(() => {
+    if (notice.isConnected) notice.remove();
+  }, 8000);
 }
 
 function getSectionIdFromOriginalPath(path = "") {
@@ -64,6 +112,7 @@ function wrapClientGalleryBucket(bucket) {
       if (property === "upload") {
         return async (path, file, options = {}) => {
           if (await isDuplicateClientGalleryOriginalUpload(path, file, options)) {
+            showDuplicateUploadNotice(file?.name);
             return { data: null, error: createDuplicateUploadError(file?.name) };
           }
 
