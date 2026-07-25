@@ -1,6 +1,9 @@
 import {
+  initializePublicGallery,
   installDownloadInterceptors,
-  syncPublicTracking,
+  refreshPublicPhotos,
+  syncFavoritesDownloadButton,
+  tryLogVisit,
 } from "./publicTracking.js";
 import {
   resetAdminActivityCache,
@@ -8,10 +11,45 @@ import {
   syncAdminTracking,
 } from "./adminDashboard.js";
 import { syncAdminSettingsPanel } from "./adminSettings.js";
+import { publicGallerySlug } from "./shared.js";
 
-function syncVisitorActivity() {
-  syncPublicTracking();
-  syncAdminTracking();
+let lastPublicSlug = "";
+let lastUnlockPassword;
+let syncRunning = false;
+
+async function syncPublicVisitorActivity() {
+  const slug = publicGallerySlug();
+  await initializePublicGallery();
+
+  if (!slug) {
+    lastPublicSlug = "";
+    lastUnlockPassword = undefined;
+    return;
+  }
+
+  const savedPassword = window.sessionStorage.getItem(`client-gallery-unlock:${slug}`) || "";
+  const galleryChanged = slug !== lastPublicSlug;
+  const passwordChanged = savedPassword !== lastUnlockPassword;
+
+  if (galleryChanged || passwordChanged) {
+    lastPublicSlug = slug;
+    lastUnlockPassword = savedPassword;
+    await refreshPublicPhotos();
+  }
+
+  tryLogVisit();
+  syncFavoritesDownloadButton();
+}
+
+async function syncVisitorActivity() {
+  if (syncRunning) return;
+  syncRunning = true;
+  try {
+    await syncPublicVisitorActivity();
+    syncAdminTracking();
+  } finally {
+    syncRunning = false;
+  }
 }
 
 export function installClientGalleryVisitorActivity() {
@@ -31,11 +69,10 @@ export function installClientGalleryVisitorActivity() {
     }
   });
 
-  // EST-83 previously watched every DOM mutation. Updating the returning
-  // visitor favorites button changed the DOM again, which could create a
-  // self-triggering observer loop after a password-protected gallery unlocked.
-  // A lightweight scheduled sync is enough for the public and admin surfaces
-  // and avoids locking the browser during repeat visits.
+  // Watching every DOM mutation caused the returning visitor Favorites button
+  // to trigger the observer repeatedly after password unlock. A scheduled sync
+  // avoids that browser-locking loop. The public payload is refreshed only when
+  // the gallery or its saved unlock password changes.
   window.setInterval(syncVisitorActivity, 1000);
   syncVisitorActivity();
 }
