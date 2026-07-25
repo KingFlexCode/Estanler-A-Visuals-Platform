@@ -1,5 +1,0 @@
-Traceback (most recent call last):
-  File "<stdin>", line 10, in <module>
-  File "est-75-implementation", line 1
-    from pathlib import Path
-IndentationError: unexpected indent
