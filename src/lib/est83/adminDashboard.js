@@ -13,6 +13,7 @@ import {
   state,
   supabase,
 } from "./shared.js";
+import { syncAdminSettingsPanel } from "./adminSettings.js";
 async function loadAdminActivity(galleryId, force = false) {
   if (!galleryId) return null;
   if (!force && state.adminActivity && state.adminGalleryId === galleryId && Date.now() - state.adminActivityLoadedAt < ADMIN_CACHE_MS) return state.adminActivity;
