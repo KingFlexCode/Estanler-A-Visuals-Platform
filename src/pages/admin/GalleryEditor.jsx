@@ -100,6 +100,29 @@ function sanitizeFileName(name = "") {
       .replace(/^-+|-+$/g, "") || `client-gallery-photo-${Date.now()}`
   );
 }
+function normalizeDuplicateFileName(fileName = "") {
+  return String(fileName).trim().toLowerCase();
+}
+function duplicateFallbackKey({ file_name, original_size_bytes, mime_type } = {}) {
+  const fileName = normalizeDuplicateFileName(file_name);
+  const fileSize = Number(original_size_bytes);
+  const fileType = String(mime_type || "").trim().toLowerCase();
+  if (!fileName || !Number.isFinite(fileSize) || !fileType) return "";
+  return `${fileName}::${fileSize}::${fileType}`;
+}
+function duplicateFallbackKeyFromFile(file) {
+  return duplicateFallbackKey({ file_name: file?.name, original_size_bytes: file?.size, mime_type: file?.type });
+}
+async function getFileSha256(file) {
+  if (!file?.arrayBuffer || !globalThis.crypto?.subtle) return "";
+  const buffer = await file.arrayBuffer();
+  const hashBuffer = await globalThis.crypto.subtle.digest("SHA-256", buffer);
+  return Array.from(new Uint8Array(hashBuffer)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+function isDuplicateInsertError(error) {
+  const message = `${error?.message || ""} ${error?.details || ""}`.toLowerCase();
+  return error?.code === "23505" || message.includes("duplicate key");
+}
 function getGalleryPhotoUrl(path) {
   if (!path) return "";
   const { data } = supabase.storage.from(CLIENT_GALLERY_BUCKET).getPublicUrl(path);
@@ -400,58 +423,123 @@ export default function GalleryEditor() {
   async function confirmDeleteModal() { if (deleteConfirmText !== "DELETE") { setDeleteModalError('Type DELETE in all caps to confirm.'); return; } if (!deleteTarget) return; setDeleting(true); const ok = deleteTarget.type === "gallery" ? await deleteGallery() : await deleteSection(deleteTarget.record); setDeleting(false); if (ok && deleteTarget.type !== "gallery") closeDeleteModal(); }
 
   async function uploadSelectedFiles(fileList) {
-    const selectedFiles = Array.from(fileList || []).filter((file) => file.type.startsWith("image/"));
-    if (!selectedFiles.length) return;
-    const sectionId = targetSection || sections[0]?.id;
-    if (!sectionId) { setError("Create a photo set before uploading images."); return; }
-    const startedAt = Date.now();
-    const existingSectionPhotos = photos.filter((photo) => photo.section_id === sectionId);
-    const safeGallerySlug = slugify(gallery.slug || gallery.title || gallery.id);
-    const insertedPhotos = [];
-    const failedUploads = [];
-    let firstCoverId = gallery.cover_image_id || null;
-    setUploading(true); setUploadStartedAt(startedAt); setElapsedSeconds(0); setError(""); setNotice(`Uploading ${selectedFiles.length} image${selectedFiles.length === 1 ? "" : "s"}...`);
-    setUploadQueue(selectedFiles.map((file) => ({ name: file.name, status: "ready", message: "Ready", progress: 0 })));
-    for (const [index, file] of selectedFiles.entries()) {
-      const cleanName = sanitizeFileName(file.name);
-      const extension = getFileExtension(file.name);
-      const uniqueName = `${Date.now()}-${index}-${cleanName}`;
-      const basePath = `${safeGallerySlug}/${sectionId}`;
-      const originalPath = `${basePath}/originals/${uniqueName}.${extension}`;
-      const displayPath = `${basePath}/display/${uniqueName}.webp`;
-      const thumbnailPath = `${basePath}/thumbnails/${uniqueName}.webp`;
-      try {
-        updateQueueItem(index, { status: "processing", message: "Creating display + thumbnail", progress: 12 });
-        const [displayImage, thumbnailImage] = await Promise.all([resizeImage(file, 2200, 0.84), resizeImage(file, 720, 0.78)]);
-        updateQueueItem(index, { status: "uploading", message: "Uploading original", progress: 34 });
-        const originalUpload = await supabase.storage.from(CLIENT_GALLERY_BUCKET).upload(originalPath, file, { cacheControl: "31536000", upsert: false, contentType: file.type });
-        if (originalUpload.error) throw originalUpload.error;
-        updateQueueItem(index, { status: "uploading", message: "Uploading display image", progress: 58 });
-        const displayUpload = await supabase.storage.from(CLIENT_GALLERY_BUCKET).upload(displayPath, displayImage.blob, { cacheControl: "31536000", upsert: false, contentType: "image/webp" });
-        if (displayUpload.error) throw displayUpload.error;
-        updateQueueItem(index, { status: "uploading", message: "Uploading thumbnail", progress: 76 });
-        const thumbnailUpload = await supabase.storage.from(CLIENT_GALLERY_BUCKET).upload(thumbnailPath, thumbnailImage.blob, { cacheControl: "31536000", upsert: false, contentType: "image/webp" });
-        if (thumbnailUpload.error) throw thumbnailUpload.error;
-        updateQueueItem(index, { status: "saving", message: "Saving gallery photo", progress: 92 });
-        const title = cleanName.replace(/-/g, " ");
-        const { data: insertedPhoto, error: insertError } = await supabase.from("client_gallery_images").insert({ gallery_id: galleryId, section_id: sectionId, file_name: file.name, title, alt_text: title, original_path: originalPath, display_path: displayPath, thumbnail_path: thumbnailPath, display_order: existingSectionPhotos.length + insertedPhotos.length, original_size_bytes: file.size, display_size_bytes: displayImage.size, thumbnail_size_bytes: thumbnailImage.size, display_width: displayImage.width, display_height: displayImage.height, thumbnail_width: thumbnailImage.width, thumbnail_height: thumbnailImage.height, mime_type: file.type, focal_x: 50, focal_y: 50 }).select("*").single();
-        if (insertError) throw insertError;
-        insertedPhotos.push(insertedPhoto);
-        setPhotos((current) => sortByOrder([...current, insertedPhoto]));
-        if (!firstCoverId) { firstCoverId = insertedPhoto.id; await setCoverImage(insertedPhoto.id, false); }
-        updateQueueItem(index, { status: "done", message: "Uploaded", progress: 100 });
-      } catch (uploadError) {
-        console.error(uploadError);
-        failedUploads.push(file.name);
-        updateQueueItem(index, { status: "failed", message: uploadError.message || "Upload failed", progress: 100 });
-        setNotice("");
-        setError(uploadError.message || "One image failed to upload.");
-      }
+  const selectedFiles = Array.from(fileList || []).filter((file) => file.type.startsWith("image/"));
+  if (!selectedFiles.length) return;
+  const sectionId = targetSection || sections[0]?.id;
+  if (!sectionId) { setError("Create a photo set before uploading images."); return; }
+
+  const startedAt = Date.now();
+  const existingSectionPhotos = photos.filter((photo) => photo.section_id === sectionId);
+  const existingHashKeys = new Set(photos.map((photo) => photo.original_sha256).filter(Boolean));
+  const existingFallbackKeys = new Set(photos.map(duplicateFallbackKey).filter(Boolean));
+  const pendingHashKeys = new Set();
+  const pendingFallbackKeys = new Set();
+  const skippedIndexes = new Set();
+  const fileHashes = new Map();
+  const safeGallerySlug = slugify(gallery.slug || gallery.title || gallery.id);
+  const insertedPhotos = [];
+  const failedUploads = [];
+  let firstCoverId = gallery.cover_image_id || null;
+
+  setUploading(true);
+  setUploadStartedAt(startedAt);
+  setElapsedSeconds(0);
+  setError("");
+  setNotice("Checking for duplicate images...");
+  setUploadQueue(selectedFiles.map((file) => ({ name: file.name, status: "processing", message: "Checking duplicate", progress: 5 })));
+
+  for (const [index, file] of selectedFiles.entries()) {
+    const fileHash = await getFileSha256(file);
+    const fallbackKey = duplicateFallbackKeyFromFile(file);
+
+    if (fileHash) fileHashes.set(index, fileHash);
+
+    const hashDuplicate = Boolean(fileHash && (existingHashKeys.has(fileHash) || pendingHashKeys.has(fileHash)));
+    const fallbackDuplicate = Boolean(fallbackKey && (existingFallbackKeys.has(fallbackKey) || pendingFallbackKeys.has(fallbackKey)));
+
+    if (hashDuplicate || fallbackDuplicate) {
+      skippedIndexes.add(index);
+      updateQueueItem(index, { status: "skipped", message: "Skipped duplicate", progress: 100 });
+      continue;
     }
-    setElapsedSeconds(Math.max(1, Math.round((Date.now() - startedAt) / 1000))); setUploadStartedAt(null); setUploading(false);
-    flash(failedUploads.length > 0 ? `Upload finished with ${failedUploads.length} failed image${failedUploads.length === 1 ? "" : "s"}.` : `Done. Uploaded ${insertedPhotos.length} image${insertedPhotos.length === 1 ? "" : "s"}.`);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+
+    if (fileHash) pendingHashKeys.add(fileHash);
+    if (fallbackKey) pendingFallbackKeys.add(fallbackKey);
+    updateQueueItem(index, { status: "ready", message: "Ready", progress: 0 });
   }
+
+  const skippedCount = skippedIndexes.size;
+  const uploadableCount = selectedFiles.length - skippedCount;
+
+  if (uploadableCount === 0) {
+    setElapsedSeconds(Math.max(1, Math.round((Date.now() - startedAt) / 1000)));
+    setUploadStartedAt(null);
+    setUploading(false);
+    flash(`Skipped ${skippedCount} duplicate image${skippedCount === 1 ? "" : "s"}.`);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    return;
+  }
+
+  setNotice(
+    skippedCount > 0
+      ? `Uploading ${uploadableCount} new image${uploadableCount === 1 ? "" : "s"}; skipped ${skippedCount} duplicate image${skippedCount === 1 ? "" : "s"}.`
+      : `Uploading ${selectedFiles.length} image${selectedFiles.length === 1 ? "" : "s"}...`
+  );
+
+  for (const [index, file] of selectedFiles.entries()) {
+    if (skippedIndexes.has(index)) continue;
+
+    const cleanName = sanitizeFileName(file.name);
+    const extension = getFileExtension(file.name);
+    const uniqueName = `${Date.now()}-${index}-${cleanName}`;
+    const basePath = `${safeGallerySlug}/${sectionId}`;
+    const originalPath = `${basePath}/originals/${uniqueName}.${extension}`;
+    const displayPath = `${basePath}/display/${uniqueName}.webp`;
+    const thumbnailPath = `${basePath}/thumbnails/${uniqueName}.webp`;
+    try {
+      updateQueueItem(index, { status: "processing", message: "Creating display + thumbnail", progress: 12 });
+      const [displayImage, thumbnailImage] = await Promise.all([resizeImage(file, 2200, 0.84), resizeImage(file, 720, 0.78)]);
+      updateQueueItem(index, { status: "uploading", message: "Uploading original", progress: 34 });
+      const originalUpload = await supabase.storage.from(CLIENT_GALLERY_BUCKET).upload(originalPath, file, { cacheControl: "31536000", upsert: false, contentType: file.type });
+      if (originalUpload.error) throw originalUpload.error;
+      updateQueueItem(index, { status: "uploading", message: "Uploading display image", progress: 58 });
+      const displayUpload = await supabase.storage.from(CLIENT_GALLERY_BUCKET).upload(displayPath, displayImage.blob, { cacheControl: "31536000", upsert: false, contentType: "image/webp" });
+      if (displayUpload.error) throw displayUpload.error;
+      updateQueueItem(index, { status: "uploading", message: "Uploading thumbnail", progress: 76 });
+      const thumbnailUpload = await supabase.storage.from(CLIENT_GALLERY_BUCKET).upload(thumbnailPath, thumbnailImage.blob, { cacheControl: "31536000", upsert: false, contentType: "image/webp" });
+      if (thumbnailUpload.error) throw thumbnailUpload.error;
+      updateQueueItem(index, { status: "saving", message: "Saving gallery photo", progress: 92 });
+      const title = cleanName.replace(/-/g, " ");
+      const { data: insertedPhoto, error: insertError } = await supabase.from("client_gallery_images").insert({ gallery_id: galleryId, section_id: sectionId, file_name: file.name, title, alt_text: title, original_path: originalPath, display_path: displayPath, thumbnail_path: thumbnailPath, display_order: existingSectionPhotos.length + insertedPhotos.length, original_size_bytes: file.size, original_sha256: fileHashes.get(index) || null, display_size_bytes: displayImage.size, thumbnail_size_bytes: thumbnailImage.size, display_width: displayImage.width, display_height: displayImage.height, thumbnail_width: thumbnailImage.width, thumbnail_height: thumbnailImage.height, mime_type: file.type, focal_x: 50, focal_y: 50 }).select("*").single();
+      if (insertError) {
+        if (isDuplicateInsertError(insertError)) {
+          await supabase.storage.from(CLIENT_GALLERY_BUCKET).remove([originalPath, displayPath, thumbnailPath]);
+          skippedIndexes.add(index);
+          updateQueueItem(index, { status: "skipped", message: "Skipped duplicate", progress: 100 });
+          continue;
+        }
+        throw insertError;
+      }
+      insertedPhotos.push(insertedPhoto);
+      setPhotos((current) => sortByOrder([...current, insertedPhoto]));
+      if (!firstCoverId) { firstCoverId = insertedPhoto.id; await setCoverImage(insertedPhoto.id, false); }
+      updateQueueItem(index, { status: "done", message: "Uploaded", progress: 100 });
+    } catch (uploadError) {
+      console.error(uploadError);
+      failedUploads.push(file.name);
+      updateQueueItem(index, { status: "failed", message: uploadError.message || "Upload failed", progress: 100 });
+      setNotice("");
+      setError(uploadError.message || "One image failed to upload.");
+    }
+  }
+  setElapsedSeconds(Math.max(1, Math.round((Date.now() - startedAt) / 1000)));
+  setUploadStartedAt(null);
+  setUploading(false);
+  const finalSkippedCount = skippedIndexes.size;
+  const skippedMessage = finalSkippedCount > 0 ? ` Skipped ${finalSkippedCount} duplicate image${finalSkippedCount === 1 ? "" : "s"}.` : "";
+  flash(failedUploads.length > 0 ? `Upload finished with ${failedUploads.length} failed image${failedUploads.length === 1 ? "" : "s"}.${skippedMessage}` : `Done. Uploaded ${insertedPhotos.length} image${insertedPhotos.length === 1 ? "" : "s"}.${skippedMessage}`);
+  if (fileInputRef.current) fileInputRef.current.value = "";
+}
 
   async function removePhoto(photoId) { const { error: deleteError } = await supabase.from("client_gallery_images").delete().eq("id", photoId); if (deleteError) { setNotice(""); setError(deleteError.message); return; } setPhotos((current) => current.filter((photo) => photo.id !== photoId)); setSelectedPhotoIds((current) => current.filter((id) => id !== photoId)); if (gallery.cover_image_id === photoId) setGalleryField("cover_image_id", null); flash("Photo removed from this client gallery."); }
   async function deleteSelectedPhotos() { if (!selectedPhotoIds.length) return; const ok = window.confirm(`Delete ${selectedPhotoIds.length} selected photo${selectedPhotoIds.length === 1 ? "" : "s"} from this gallery?`); if (!ok) return; const { error: deleteError } = await supabase.from("client_gallery_images").delete().in("id", selectedPhotoIds); if (deleteError) { setNotice(""); setError(deleteError.message); return; } setPhotos((current) => current.filter((photo) => !selectedPhotoIds.includes(photo.id))); if (selectedPhotoIds.includes(gallery.cover_image_id)) setGalleryField("cover_image_id", null); setSelectedPhotoIds([]); setSelectionAnchorId(null); setActionMenuOpen(false); flash("Selected photos removed from this gallery."); }
