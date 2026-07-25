@@ -343,6 +343,7 @@ export default function GalleryEditor() {
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState("");
   const [qrCodeLoading, setQrCodeLoading] = useState(false);
   const [shareModalError, setShareModalError] = useState("");
+  const [savedGallerySlug, setSavedGallerySlug] = useState("");
 
   const coverPhoto = useMemo(() => photos.find((photo) => photo.id === gallery?.cover_image_id) || photos[0] || null, [gallery?.cover_image_id, photos]);
   const activeSection = useMemo(() => sections.find((section) => section.id === targetSection) || sections[0] || null, [sections, targetSection]);
@@ -350,12 +351,16 @@ export default function GalleryEditor() {
   const selectedPhotos = useMemo(() => photos.filter((photo) => selectedPhotoIds.includes(photo.id)), [photos, selectedPhotoIds]);
   const contextPhoto = contextMenu?.photoId ? photos.find((photo) => photo.id === contextMenu.photoId) : null;
   const publicGalleryUrl = useMemo(() => {
-    const publicSlug = gallery?.slug?.trim();
+    const publicSlug = String(savedGallerySlug || "").trim();
     if (!publicSlug) return "";
     if (typeof window === "undefined") return `/gallery/${publicSlug}`;
     return `${window.location.origin}/gallery/${publicSlug}`;
-  }, [gallery?.slug]);
+  }, [savedGallerySlug]);
   const sharingState = useMemo(() => getGallerySharingState(gallery), [gallery]);
+  const hasUnsavedSlugChange = useMemo(
+    () => slugify(gallery?.slug || gallery?.title || "") !== String(savedGallerySlug || ""),
+    [gallery?.slug, gallery?.title, savedGallerySlug]
+  );
 
   useEffect(() => { loadWorkspace(); }, [galleryId]);
   useEffect(() => {
@@ -389,7 +394,7 @@ export default function GalleryEditor() {
       supabase.from("client_gallery_sections").select("*").eq("gallery_id", galleryId).order("display_order", { ascending: true }),
       supabase.from("client_gallery_images").select("*").eq("gallery_id", galleryId).order("display_order", { ascending: true }),
     ]);
-    if (galleryResult.error) { setError(galleryResult.error.message); setGallery(null); } else { setGallery(galleryResult.data); setPassword(""); setChangingPassword(false); setShowPassword(false); }
+    if (galleryResult.error) { setError(galleryResult.error.message); setGallery(null); setSavedGallerySlug(""); } else { setGallery(galleryResult.data); setSavedGallerySlug(galleryResult.data?.slug || ""); setPassword(""); setChangingPassword(false); setShowPassword(false); }
     if (sectionResult.error) { setError(sectionResult.error.message); setSections([]); } else { const nextSections = sectionResult.data || []; setSections(nextSections); setTargetSection((current) => current || nextSections[0]?.id || ""); }
     if (photoResult.error) { setError(photoResult.error.message); setPhotos([]); } else setPhotos(photoResult.data || []);
     setLoading(false);
@@ -440,6 +445,7 @@ export default function GalleryEditor() {
       resetPasswordChange();
     }
     setGallery(nextGallery);
+    setSavedGallerySlug(nextGallery?.slug || "");
     setSaving(false);
     flash("Gallery workspace saved.");
   }
@@ -609,7 +615,17 @@ async function copyPublicGalleryLink() {
     await navigator.clipboard.writeText(publicGalleryUrl);
     flash("Public gallery link copied.");
   } catch {
-    setShareModalError("The link could not be copied automatically. Select the URL and copy it manually.");
+    const copyField = document.createElement("textarea");
+    copyField.value = publicGalleryUrl;
+    copyField.setAttribute("readonly", "");
+    copyField.style.position = "fixed";
+    copyField.style.opacity = "0";
+    document.body.appendChild(copyField);
+    copyField.select();
+    const copied = document.execCommand("copy");
+    copyField.remove();
+    if (copied) flash("Public gallery link copied.");
+    else setShareModalError("The link could not be copied automatically. Select the URL and copy it manually.");
   }
 }
 function shareGalleryByEmail() {
@@ -695,6 +711,7 @@ function downloadGalleryQrCode() {
         <h3 style={{ color: COLORS.white, fontFamily: "'Inter', sans-serif", fontSize: 15, margin: 0 }}>Gallery Sharing</h3>
         <p style={{ color: COLORS.muted, fontFamily: "'Inter', sans-serif", fontSize: 12, lineHeight: 1.6, margin: 0 }}>Preview the client-facing gallery, copy its public link, compose an email, or generate a QR code. These tools always use the public gallery route.</p>
         <label><FieldLabel>Current Public Gallery URL</FieldLabel><input value={publicGalleryUrl} readOnly onFocus={(event) => event.target.select()} style={{ ...inputStyle, color: publicGalleryUrl ? COLORS.white : COLORS.muted }} /></label>
+        {hasUnsavedSlugChange && <div style={{ border: "1px solid rgba(255,183,94,0.42)", color: "#ffcf9a", fontFamily: "'Inter', sans-serif", fontSize: 12, lineHeight: 1.6, padding: "0.75rem" }}><strong style={{ display: "block", marginBottom: 4 }}>Unsaved URL change</strong>Sharing continues to use the last saved public URL until you click Save Gallery.</div>}
         <div style={{ border: `1px solid ${sharingState.tone === "success" ? "rgba(74,222,128,0.35)" : sharingState.tone === "warning" ? "rgba(255,183,94,0.42)" : "rgba(255,139,139,0.42)"}`, color: sharingState.tone === "success" ? "#9af0b8" : sharingState.tone === "warning" ? "#ffcf9a" : "#ffb4b4", fontFamily: "'Inter', sans-serif", fontSize: 12, lineHeight: 1.6, padding: "0.75rem" }}><strong style={{ display: "block", marginBottom: 4 }}>{sharingState.label}</strong>{sharingState.message}</div>
         <button type="button" onClick={openShareModal} style={primaryButtonStyle}>Open Sharing Tools</button>
       </section>
