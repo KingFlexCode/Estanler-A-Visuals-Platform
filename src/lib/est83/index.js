@@ -1,8 +1,6 @@
 import {
   installDownloadInterceptors,
-  syncFavoritesDownloadButton,
   syncPublicTracking,
-  tryLogVisit,
 } from "./publicTracking.js";
 import {
   resetAdminActivityCache,
@@ -10,6 +8,11 @@ import {
   syncAdminTracking,
 } from "./adminDashboard.js";
 import { syncAdminSettingsPanel } from "./adminSettings.js";
+
+function syncVisitorActivity() {
+  syncPublicTracking();
+  syncAdminTracking();
+}
 
 export function installClientGalleryVisitorActivity() {
   if (typeof window === "undefined" || window.__est83VisitorActivityInstalled) return;
@@ -28,19 +31,11 @@ export function installClientGalleryVisitorActivity() {
     }
   });
 
-  const observer = new MutationObserver(() => {
-    tryLogVisit();
-    syncFavoritesDownloadButton();
-    syncAdminSettingsPanel();
-    syncAdminActivityPanel();
-  });
-  observer.observe(document.documentElement, { childList: true, subtree: true });
-
-  window.setInterval(() => {
-    syncPublicTracking();
-    syncAdminTracking();
-  }, 850);
-
-  syncPublicTracking();
-  syncAdminTracking();
+  // EST-83 previously watched every DOM mutation. Updating the returning
+  // visitor favorites button changed the DOM again, which could create a
+  // self-triggering observer loop after a password-protected gallery unlocked.
+  // A lightweight scheduled sync is enough for the public and admin surfaces
+  // and avoids locking the browser during repeat visits.
+  window.setInterval(syncVisitorActivity, 1000);
+  syncVisitorActivity();
 }
