@@ -1,0 +1,5 @@
+
+> estanleravisuals-landing-page@0.0.0 build
+> vite build
+
+sh: 1: vite: not found
