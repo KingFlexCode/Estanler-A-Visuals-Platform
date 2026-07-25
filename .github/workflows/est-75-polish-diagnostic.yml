@@ -1,0 +1,45 @@
+name: EST-75 polish diagnostic
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    if: github.head_ref == 'est-75-gallery-sharing-tools-preview-direct-link-email-qr-code'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Apply polish and capture build output
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          workflow = Path('.github/workflows/est-75-polish.yml').read_text()
+          match = re.search(r"echo '([A-Za-z0-9+/=]+)' \| base64 -d", workflow)
+          if not match:
+              raise SystemExit('Could not extract polish script')
+          Path('/tmp/est75_polish.b64').write_text(match.group(1))
+          PY
+          base64 -d /tmp/est75_polish.b64 > /tmp/est75_polish.py
+          python3 /tmp/est75_polish.py
+          set +e
+          npm run build > est75-build-error.txt 2>&1
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then echo "BUILD PASSED" > est75-build-error.txt; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add est75-build-error.txt
+          git commit -m "Record EST-75 polish build diagnostic"
+          git push origin HEAD:est-75-gallery-sharing-tools-preview-direct-link-email-qr-code
