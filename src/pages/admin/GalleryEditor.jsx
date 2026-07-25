@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import QRCode from "qrcode";
 import { Spinner } from "../../components/UI";
 import { COLORS } from "../../lib/constants";
 import { supabase } from "../../lib/supabase";
@@ -212,6 +213,19 @@ function ToggleRow({ title, description, checked, onChange }) {
 function PasswordField({ value, onChange, visible, onToggle, locked }) {
   return <div style={{ position: "relative" }}><input type={visible && !locked ? "text" : "password"} value={locked ? "••••••••••" : value} readOnly={locked} onChange={(event) => onChange(event.target.value)} placeholder="Enter gallery password" style={{ ...inputStyle, paddingRight: locked ? 12 : 52, color: locked ? COLORS.muted : COLORS.white, cursor: locked ? "not-allowed" : "text" }} />{!locked && <button type="button" onClick={onToggle} title={visible ? "Hide password" : "Show password"} aria-label={visible ? "Hide password" : "Show password"} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "transparent", border: "none", color: COLORS.gold, cursor: "pointer", fontSize: 17, height: 32, width: 32 }}>{visible ? "◉" : "◌"}</button>}</div>;
 }
+function getGallerySharingState(gallery) {
+  const status = gallery?.status || "draft";
+  const accessMode = gallery?.access_mode || "public";
+  const expiration = gallery?.expires_at ? new Date(gallery.expires_at) : null;
+  const expired = Boolean(expiration && !Number.isNaN(expiration.getTime()) && expiration.getTime() <= Date.now());
+
+  if (status === "archived") return { available: false, label: "Archived", tone: "danger", message: "Archived galleries are unavailable to clients. Restore and publish the gallery before sharing it." };
+  if (status !== "published") return { available: false, label: "Draft", tone: "warning", message: "This gallery is not published. Clients opening the link will see an unavailable gallery state." };
+  if (accessMode === "hidden") return { available: false, label: "Hidden", tone: "danger", message: "Hidden galleries are unavailable publicly, even when the gallery status is published." };
+  if (expired) return { available: false, label: "Expired", tone: "danger", message: "This gallery has expired. Clear or extend the expiration before sending the client link." };
+  if (accessMode === "password") return { available: true, label: "Password Protected", tone: "warning", message: "The public link is active, but clients must enter the gallery password. Share the password separately." };
+  return { available: true, label: "Publicly Available", tone: "success", message: "The public gallery link is ready to share with the client." };
+}
 function formatLocalDateTime(value) {
   if (!value) return "";
   const date = new Date(value);
@@ -325,12 +339,28 @@ export default function GalleryEditor() {
   const [password, setPassword] = useState("");
   const [changingPassword, setChangingPassword] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [qrCodeDataUrl, setQrCodeDataUrl] = useState("");
+  const [qrCodeLoading, setQrCodeLoading] = useState(false);
+  const [shareModalError, setShareModalError] = useState("");
+  const [savedGallerySlug, setSavedGallerySlug] = useState("");
 
   const coverPhoto = useMemo(() => photos.find((photo) => photo.id === gallery?.cover_image_id) || photos[0] || null, [gallery?.cover_image_id, photos]);
   const activeSection = useMemo(() => sections.find((section) => section.id === targetSection) || sections[0] || null, [sections, targetSection]);
   const activeSectionPhotos = useMemo(() => sortByOrder(photos.filter((photo) => photo.section_id === activeSection?.id)), [activeSection?.id, photos]);
   const selectedPhotos = useMemo(() => photos.filter((photo) => selectedPhotoIds.includes(photo.id)), [photos, selectedPhotoIds]);
   const contextPhoto = contextMenu?.photoId ? photos.find((photo) => photo.id === contextMenu.photoId) : null;
+  const publicGalleryUrl = useMemo(() => {
+    const publicSlug = String(savedGallerySlug || "").trim();
+    if (!publicSlug) return "";
+    if (typeof window === "undefined") return `/gallery/${publicSlug}`;
+    return `${window.location.origin}/gallery/${publicSlug}`;
+  }, [savedGallerySlug]);
+  const sharingState = useMemo(() => getGallerySharingState(gallery), [gallery]);
+  const hasUnsavedSlugChange = useMemo(
+    () => slugify(gallery?.slug || gallery?.title || "") !== String(savedGallerySlug || ""),
+    [gallery?.slug, gallery?.title, savedGallerySlug]
+  );
 
   useEffect(() => { loadWorkspace(); }, [galleryId]);
   useEffect(() => {
@@ -351,6 +381,10 @@ export default function GalleryEditor() {
     const timer = window.setTimeout(() => setNotice(""), 6000);
     return () => window.clearTimeout(timer);
   }, [notice]);
+  useEffect(() => {
+    setQrCodeDataUrl("");
+    setShareModalError("");
+  }, [publicGalleryUrl]);
   useEffect(() => { setMoveTargetSectionId(activeSection?.id || ""); }, [activeSection?.id]);
 
   async function loadWorkspace() {
@@ -360,7 +394,7 @@ export default function GalleryEditor() {
       supabase.from("client_gallery_sections").select("*").eq("gallery_id", galleryId).order("display_order", { ascending: true }),
       supabase.from("client_gallery_images").select("*").eq("gallery_id", galleryId).order("display_order", { ascending: true }),
     ]);
-    if (galleryResult.error) { setError(galleryResult.error.message); setGallery(null); } else { setGallery(galleryResult.data); setPassword(""); setChangingPassword(false); setShowPassword(false); }
+    if (galleryResult.error) { setError(galleryResult.error.message); setGallery(null); setSavedGallerySlug(""); } else { setGallery(galleryResult.data); setSavedGallerySlug(galleryResult.data?.slug || ""); setPassword(""); setChangingPassword(false); setShowPassword(false); }
     if (sectionResult.error) { setError(sectionResult.error.message); setSections([]); } else { const nextSections = sectionResult.data || []; setSections(nextSections); setTargetSection((current) => current || nextSections[0]?.id || ""); }
     if (photoResult.error) { setError(photoResult.error.message); setPhotos([]); } else setPhotos(photoResult.data || []);
     setLoading(false);
@@ -411,6 +445,7 @@ export default function GalleryEditor() {
       resetPasswordChange();
     }
     setGallery(nextGallery);
+    setSavedGallerySlug(nextGallery?.slug || "");
     setSaving(false);
     flash("Gallery workspace saved.");
   }
@@ -546,7 +581,71 @@ export default function GalleryEditor() {
   async function moveSelectedToSection(sectionId) { if (!selectedPhotoIds.length || !sectionId) return; const destinationPhotos = photos.filter((photo) => photo.section_id === sectionId && !selectedPhotoIds.includes(photo.id)); const results = await Promise.all(selectedPhotoIds.map((photoId, index) => supabase.from("client_gallery_images").update({ section_id: sectionId, display_order: destinationPhotos.length + index }).eq("id", photoId).select("*").single())); const failed = results.find((result) => result.error); if (failed) { setNotice(""); setError(failed.error.message); return; } const updatedById = results.reduce((map, result) => ({ ...map, [result.data.id]: result.data }), {}); setPhotos((current) => current.map((photo) => updatedById[photo.id] || photo)); setTargetSection(sectionId); setSelectedPhotoIds([]); setSelectionAnchorId(null); setContextMenu(null); setActionMenuOpen(false); flash("Selected photos moved to another set."); }
   async function setCoverImage(photoId, showNotice = true) { const { data, error: updateError } = await supabase.from("client_galleries").update({ cover_image_id: photoId }).eq("id", galleryId).select("*").single(); if (updateError) { setNotice(""); setError(updateError.message); } else { setGallery(data); if (showNotice) flash("Cover photo updated."); } setActionMenuOpen(false); }
   function updateFocalFromPointer(event) { const rect = event.currentTarget.getBoundingClientRect(); const x = Math.min(100, Math.max(0, ((event.clientX - rect.left) / rect.width) * 100)); const y = Math.min(100, Math.max(0, ((event.clientY - rect.top) / rect.height) * 100)); setGallery((current) => ({ ...current, cover_focal_x: Math.round(x), cover_focal_y: Math.round(y) })); }
-  function openPreview() { if (gallery?.slug) window.open(`/gallery/${gallery.slug}`, "_blank", "noopener,noreferrer"); }
+  function openPreview() {
+  if (!publicGalleryUrl) { setShareModalError("Save a valid gallery slug before previewing."); return; }
+  window.open(publicGalleryUrl, "_blank", "noopener,noreferrer");
+}
+async function generateGalleryQrCode() {
+  if (!sharingState.available || !publicGalleryUrl) return;
+  setQrCodeLoading(true);
+  setShareModalError("");
+  try {
+    const dataUrl = await QRCode.toDataURL(publicGalleryUrl, { width: 360, margin: 2, errorCorrectionLevel: "M", color: { dark: "#101820", light: "#ffffff" } });
+    setQrCodeDataUrl(dataUrl);
+  } catch (qrError) {
+    console.error(qrError);
+    setShareModalError("The QR code could not be generated. Please try again.");
+  } finally {
+    setQrCodeLoading(false);
+  }
+}
+function openShareModal() {
+  setShareModalOpen(true);
+  setShareModalError("");
+  if (sharingState.available && publicGalleryUrl && !qrCodeDataUrl) generateGalleryQrCode();
+}
+function closeShareModal() {
+  if (qrCodeLoading) return;
+  setShareModalOpen(false);
+  setShareModalError("");
+}
+async function copyPublicGalleryLink() {
+  if (!sharingState.available || !publicGalleryUrl) { setShareModalError("Make the gallery publicly available before copying its delivery link."); return; }
+  try {
+    await navigator.clipboard.writeText(publicGalleryUrl);
+    flash("Public gallery link copied.");
+  } catch {
+    const copyField = document.createElement("textarea");
+    copyField.value = publicGalleryUrl;
+    copyField.setAttribute("readonly", "");
+    copyField.style.position = "fixed";
+    copyField.style.opacity = "0";
+    document.body.appendChild(copyField);
+    copyField.select();
+    const copied = document.execCommand("copy");
+    copyField.remove();
+    if (copied) flash("Public gallery link copied.");
+    else setShareModalError("The link could not be copied automatically. Select the URL and copy it manually.");
+  }
+}
+function shareGalleryByEmail() {
+  if (!sharingState.available || !publicGalleryUrl) { setShareModalError("Make the gallery publicly available before emailing its delivery link."); return; }
+  const recipient = String(gallery?.client_email || "").trim();
+  const greeting = gallery?.client_name ? `Hi ${gallery.client_name},` : "Hello,";
+  const passwordNote = (gallery?.access_mode || "public") === "password" ? "\n\nThis gallery is password protected. Please use the password sent to you separately." : "";
+  const subject = encodeURIComponent(`${gallery?.title || "Your gallery"} is ready`);
+  const body = encodeURIComponent(`${greeting}\n\nYour photo gallery is ready to view:\n${publicGalleryUrl}${passwordNote}\n\nBest,\nEstanler Aleman Photography`);
+  window.location.href = `mailto:${recipient}?subject=${subject}&body=${body}`;
+}
+function downloadGalleryQrCode() {
+  if (!qrCodeDataUrl) return;
+  const link = document.createElement("a");
+  link.href = qrCodeDataUrl;
+  link.download = `${slugify(gallery?.title || gallery?.slug || "client-gallery")}-qr-code.png`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
   function openPhoto(photo) { const imageUrl = getGalleryPhotoUrl(photo?.display_path || photo?.original_path || photo?.thumbnail_path); if (imageUrl) window.open(imageUrl, "_blank", "noopener,noreferrer"); }
   async function copyFilenames(photosToCopy = selectedPhotos) { const filenames = photosToCopy.map((photo) => photo.file_name || photo.title || photo.id).join("\n"); if (filenames) { await navigator.clipboard?.writeText(filenames); flash("Filenames copied."); } setContextMenu(null); setActionMenuOpen(false); }
   function showLaterNotice(feature) { flash(`${feature} belongs to a later client gallery issue.`); setContextMenu(null); setActionMenuOpen(false); }
@@ -609,6 +708,14 @@ export default function GalleryEditor() {
         </div>}
       </section>
       <section style={{ border: `1px solid ${COLORS.border}`, background: "rgba(255,255,255,0.025)", padding: "0.9rem", display: "flex", flexDirection: "column", gap: "0.9rem" }}>
+        <h3 style={{ color: COLORS.white, fontFamily: "'Inter', sans-serif", fontSize: 15, margin: 0 }}>Gallery Sharing</h3>
+        <p style={{ color: COLORS.muted, fontFamily: "'Inter', sans-serif", fontSize: 12, lineHeight: 1.6, margin: 0 }}>Preview the client-facing gallery, copy its public link, compose an email, or generate a QR code. These tools always use the public gallery route.</p>
+        <label><FieldLabel>Current Public Gallery URL</FieldLabel><input value={publicGalleryUrl} readOnly onFocus={(event) => event.target.select()} style={{ ...inputStyle, color: publicGalleryUrl ? COLORS.white : COLORS.muted }} /></label>
+        {hasUnsavedSlugChange && <div style={{ border: "1px solid rgba(255,183,94,0.42)", color: "#ffcf9a", fontFamily: "'Inter', sans-serif", fontSize: 12, lineHeight: 1.6, padding: "0.75rem" }}><strong style={{ display: "block", marginBottom: 4 }}>Unsaved URL change</strong>Sharing continues to use the last saved public URL until you click Save Gallery.</div>}
+        <div style={{ border: `1px solid ${sharingState.tone === "success" ? "rgba(74,222,128,0.35)" : sharingState.tone === "warning" ? "rgba(255,183,94,0.42)" : "rgba(255,139,139,0.42)"}`, color: sharingState.tone === "success" ? "#9af0b8" : sharingState.tone === "warning" ? "#ffcf9a" : "#ffb4b4", fontFamily: "'Inter', sans-serif", fontSize: 12, lineHeight: 1.6, padding: "0.75rem" }}><strong style={{ display: "block", marginBottom: 4 }}>{sharingState.label}</strong>{sharingState.message}</div>
+        <button type="button" onClick={openShareModal} style={primaryButtonStyle}>Open Sharing Tools</button>
+      </section>
+      <section style={{ border: `1px solid ${COLORS.border}`, background: "rgba(255,255,255,0.025)", padding: "0.9rem", display: "flex", flexDirection: "column", gap: "0.9rem" }}>
         <h3 style={{ color: COLORS.white, fontFamily: "'Inter', sans-serif", fontSize: 15, margin: 0 }}>Expiration</h3>
         <label><FieldLabel>Expires At</FieldLabel><input type="datetime-local" value={formatLocalDateTime(gallery.expires_at)} onChange={(event) => setGalleryField("expires_at", event.target.value ? new Date(event.target.value).toISOString() : null)} style={inputStyle} /></label>
         <button type="button" onClick={() => setGalleryField("expires_at", null)} style={buttonStyle}>Clear Expiration</button>
@@ -645,6 +752,14 @@ export default function GalleryEditor() {
     return <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,0.58)", display: "flex", alignItems: "center", justifyContent: "center", padding: "2rem" }}><div style={{ width: "min(720px, 96vw)", background: "#fff", color: "#111", boxShadow: "0 30px 100px rgba(0,0,0,0.45)" }}><div style={{ display: "flex", alignItems: "center", padding: "2rem 2.4rem 1rem" }}><h2 style={{ fontFamily: "'Inter', sans-serif", fontSize: 15, fontWeight: 900, letterSpacing: "0.13em", margin: 0, textTransform: "uppercase" }}>Set Focal Point</h2><button type="button" onClick={() => setFocalModalOpen(false)} style={{ marginLeft: "auto", background: "transparent", border: "none", cursor: "pointer", fontSize: 28, color: "#777" }}>×</button></div><div style={{ padding: "0.5rem 2.4rem 2.4rem" }}><div onClick={updateFocalFromPointer} style={{ position: "relative", width: "100%", background: "#f1f1f1", cursor: "crosshair", userSelect: "none" }}>{coverUrl ? <img src={coverUrl} alt="Cover focal point" draggable={false} style={{ width: "100%", display: "block" }} /> : <div style={{ aspectRatio: "3 / 2", display: "grid", placeItems: "center", color: "#777" }}>No cover photo selected</div>}<FocalTarget x={gallery.cover_focal_x ?? 50} y={gallery.cover_focal_y ?? 50} size={64} /></div><p style={{ color: "#666", fontFamily: "'Inter', sans-serif", fontSize: 13, lineHeight: 1.6, margin: "1rem 0 0" }}>Click the most important part of the image. Cover templates will try to keep this point visible when the image is cropped.</p><div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: "1.25rem" }}><button type="button" onClick={() => { setGalleryField("cover_focal_x", 50); setGalleryField("cover_focal_y", 50); }} style={{ ...buttonStyle, color: "#111", borderColor: "#ddd" }}>Reset</button><button type="button" onClick={() => setFocalModalOpen(false)} style={{ ...primaryButtonStyle, background: "#00b894", color: "#fff" }}>Done</button></div></div></div></div>;
   }
 
+  function renderShareModal() {
+  if (!shareModalOpen) return null;
+  const toneColor = sharingState.tone === "success" ? "#9af0b8" : sharingState.tone === "warning" ? "#ffcf9a" : "#ffb4b4";
+  const toneBorder = sharingState.tone === "success" ? "rgba(74,222,128,0.35)" : sharingState.tone === "warning" ? "rgba(255,183,94,0.42)" : "rgba(255,139,139,0.42)";
+  const deliveryDisabled = !sharingState.available || !publicGalleryUrl;
+  return <div style={{ position: "fixed", inset: 0, zIndex: 330, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "center", justifyContent: "center", padding: "2rem" }}><div style={{ width: "min(920px, 96vw)", maxHeight: "92vh", overflowY: "auto", background: "#101820", border: `1px solid ${COLORS.border}`, boxShadow: "0 32px 110px rgba(0,0,0,0.58)", color: COLORS.white }}><div style={{ padding: "1.35rem 1.5rem", borderBottom: `1px solid ${COLORS.border}`, display: "flex", alignItems: "center", gap: "1rem" }}><div><div style={{ color: COLORS.gold, fontFamily: "'Inter', sans-serif", fontSize: 10, fontWeight: 900, letterSpacing: "0.16em", textTransform: "uppercase", marginBottom: 5 }}>Client Delivery</div><h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: "1.65rem", margin: 0 }}>Share Gallery</h2></div><button type="button" onClick={closeShareModal} disabled={qrCodeLoading} aria-label="Close sharing tools" style={{ marginLeft: "auto", background: "transparent", border: "none", color: COLORS.muted, cursor: qrCodeLoading ? "not-allowed" : "pointer", fontSize: 27 }}>×</button></div><div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.2fr) minmax(260px, 0.8fr)", gap: "1.5rem", padding: "1.5rem" }}><div style={{ display: "flex", flexDirection: "column", gap: "1rem", minWidth: 0 }}><div style={{ border: `1px solid ${toneBorder}`, color: toneColor, fontFamily: "'Inter', sans-serif", fontSize: 13, lineHeight: 1.65, padding: "0.9rem" }}><strong style={{ display: "block", marginBottom: 4 }}>{sharingState.label}</strong>{sharingState.message}</div>{gallery.allow_sharing === false && <div style={{ border: "1px solid rgba(255,183,94,0.3)", color: "#ffcf9a", fontFamily: "'Inter', sans-serif", fontSize: 12, lineHeight: 1.6, padding: "0.8rem" }}>Client-facing share buttons are turned off under Delivery Controls. Admin delivery tools here remain available and do not change that setting.</div>}<label><FieldLabel>Public Gallery URL</FieldLabel><input value={publicGalleryUrl} readOnly onFocus={(event) => event.target.select()} style={{ ...inputStyle, color: publicGalleryUrl ? COLORS.white : COLORS.muted }} /></label><div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}><button type="button" onClick={openPreview} disabled={!publicGalleryUrl} style={{ ...buttonStyle, opacity: publicGalleryUrl ? 1 : 0.5 }}>Preview Public Gallery</button><button type="button" onClick={copyPublicGalleryLink} disabled={deliveryDisabled} style={{ ...buttonStyle, opacity: deliveryDisabled ? 0.5 : 1 }}>Copy Direct Link</button><button type="button" onClick={shareGalleryByEmail} disabled={deliveryDisabled} style={{ ...buttonStyle, opacity: deliveryDisabled ? 0.5 : 1 }}>Email {gallery.client_email ? "Client" : "Gallery Link"}</button><button type="button" onClick={generateGalleryQrCode} disabled={deliveryDisabled || qrCodeLoading} style={{ ...buttonStyle, opacity: deliveryDisabled || qrCodeLoading ? 0.5 : 1 }}>{qrCodeLoading ? "Generating..." : qrCodeDataUrl ? "Refresh QR Code" : "Generate QR Code"}</button></div><div style={{ color: COLORS.muted, fontFamily: "'Inter', sans-serif", fontSize: 12, lineHeight: 1.65 }}>Email recipient: <strong style={{ color: gallery.client_email ? COLORS.white : COLORS.gold }}>{gallery.client_email || "Not saved — your email app will open without a recipient."}</strong></div>{shareModalError && <div style={{ border: "1px solid rgba(255,139,139,0.45)", color: "#ffb4b4", fontFamily: "'Inter', sans-serif", fontSize: 12, lineHeight: 1.6, padding: "0.8rem" }}>{shareModalError}</div>}{notice && <div style={{ border: "1px solid rgba(74,222,128,0.3)", color: "#9af0b8", fontFamily: "'Inter', sans-serif", fontSize: 12, padding: "0.8rem" }}>{notice}</div>}</div><div style={{ border: `1px solid ${COLORS.border}`, background: "#fff", minHeight: 330, display: "flex", alignItems: "center", justifyContent: "center", padding: "1.2rem", boxSizing: "border-box" }}>{qrCodeLoading ? <div style={{ color: "#555", fontFamily: "'Inter', sans-serif", fontSize: 13 }}>Generating QR code...</div> : qrCodeDataUrl ? <div style={{ width: "100%", textAlign: "center" }}><img src={qrCodeDataUrl} alt={`QR code for ${gallery.title || "client gallery"}`} style={{ display: "block", width: "100%", maxWidth: 330, height: "auto", margin: "0 auto" }} /><button type="button" onClick={downloadGalleryQrCode} style={{ ...buttonStyle, color: "#101820", borderColor: "rgba(16,24,32,0.35)", marginTop: "1rem" }}>Download QR PNG</button></div> : <div style={{ color: "#666", fontFamily: "'Inter', sans-serif", fontSize: 13, lineHeight: 1.6, maxWidth: 260, textAlign: "center" }}>{sharingState.available ? "Generate a QR code that opens the public client gallery URL." : "QR code generation becomes available after the gallery can be accessed publicly."}</div>}</div></div></div></div>;
+}
+
   function renderDeleteModal() {
     if (!deleteTarget) return null;
     const isGallery = deleteTarget.type === "gallery";
@@ -656,5 +771,5 @@ export default function GalleryEditor() {
   if (loading) return <div style={pageStyle}><AdminNav onSignOut={handleSignOut} /><div style={{ padding: "3rem" }}><Spinner /></div></div>;
   if (!gallery) return <div style={pageStyle}><AdminNav onSignOut={handleSignOut} /><div style={{ padding: "3rem", color: COLORS.white }}>Gallery not found.</div></div>;
 
-  return <div style={{ ...pageStyle, height: "100vh", overflow: "hidden" }}><AdminNav onSignOut={handleSignOut} /><header style={{ height: 68, borderBottom: `1px solid ${COLORS.border}`, background: COLORS.surfaceDark || "#060606", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", padding: "0 1.5rem", position: "sticky", top: 56, zIndex: 40 }}><div style={{ display: "flex", alignItems: "center", gap: "1rem", minWidth: 0 }}><button type="button" onClick={() => navigate("/admin/galleries")} style={buttonStyle}>← Galleries</button><div style={{ minWidth: 0 }}><h1 style={{ color: COLORS.white, fontFamily: "'Playfair Display', serif", fontSize: "1.15rem", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{gallery.title || "Untitled Gallery"}</h1><div style={{ color: COLORS.muted, fontFamily: "'Inter', sans-serif", fontSize: 12 }}>{formatDate(gallery.event_date)} · {photos.length} photo{photos.length === 1 ? "" : "s"}</div></div><StatusPill status={gallery.status} onClick={toggleGalleryVisibility} /></div><div style={{ display: "flex", gap: "0.65rem", alignItems: "center" }}><button type="button" onClick={openPreview} style={buttonStyle}>Preview</button><button type="button" disabled style={{ ...buttonStyle, opacity: 0.45, cursor: "not-allowed" }}>Share Later</button><button type="button" onClick={saveGallery} disabled={saving} style={primaryButtonStyle}>{saving ? "Saving..." : "Save Gallery"}</button><button type="button" onClick={() => openDeleteModal("gallery", gallery)} style={{ ...buttonStyle, color: "#ff8b8b", borderColor: "rgba(255,139,139,0.45)" }}>Delete Gallery</button></div></header><div style={{ display: "grid", gridTemplateColumns: "360px minmax(0, 1fr)", height: "calc(100vh - 124px)", overflow: "hidden" }}><aside style={{ borderRight: `1px solid ${COLORS.border}`, background: COLORS.surfaceDark || "#060606", height: "calc(100vh - 124px)", overflow: "hidden", display: "flex", flexDirection: "column" }} onWheel={(event) => event.stopPropagation()}><button type="button" aria-label="Open cover design controls" onClick={() => { setActiveTab("design"); setDesignSection("cover"); }} style={{ aspectRatio: "16 / 9", width: "100%", backgroundColor: "rgba(255,255,255,0.035)", backgroundImage: getCoverUrl(coverPhoto) ? `url(${getCoverUrl(coverPhoto)})` : "linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02))", backgroundPosition: `${gallery.cover_focal_x ?? 50}% ${gallery.cover_focal_y ?? 50}%`, backgroundSize: "cover", backgroundRepeat: "no-repeat", border: "none", borderBottom: `1px solid ${COLORS.border}`, cursor: "pointer", flexShrink: 0 }} /><div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", borderBottom: `1px solid ${COLORS.border}`, flexShrink: 0 }}>{SIDEBAR_TABS.map((tab) => <button key={tab.id} type="button" onClick={() => { setActiveTab(tab.id); closeWorkspaceMenus(); }} style={{ background: activeTab === tab.id ? "rgba(255,255,255,0.07)" : "transparent", border: "none", borderRight: `1px solid ${COLORS.border}`, color: activeTab === tab.id ? COLORS.gold : COLORS.muted, cursor: "pointer", fontFamily: "'Inter', sans-serif", fontSize: 10, fontWeight: 800, letterSpacing: "0.08em", padding: "0.75rem 0.35rem", textTransform: "uppercase" }} title={tab.label}><div style={{ fontSize: 16, marginBottom: 4 }}>{tab.icon}</div>{tab.label}</button>)}</div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", padding: activeTab === "design" ? "1rem 0.75rem" : "1rem" }} onWheel={(event) => event.stopPropagation()}>{error && <div style={{ border: "1px solid rgba(224,92,92,0.35)", color: "#ff8b8b", fontFamily: "'Inter', sans-serif", fontSize: 12, lineHeight: 1.5, marginBottom: "1rem", padding: "0.75rem" }}>{error}</div>}{notice && <div style={{ border: "1px solid rgba(74,222,128,0.28)", color: "#9af0b8", fontFamily: "'Inter', sans-serif", fontSize: 12, lineHeight: 1.5, marginBottom: "1rem", padding: "0.75rem" }}>{notice}</div>}{renderActivePanel()}</div></aside>{activeTab === "photos" ? renderPhotosWorkspace() : <main style={{ background: "#f4f4f4", height: "calc(100vh - 124px)", overflowY: "auto", overflowX: "hidden", padding: "3rem 2rem", boxSizing: "border-box" }}><GalleryPreview gallery={gallery} sections={sections} photos={photos} coverPhoto={coverPhoto} previewMode={previewMode} /></main>}</div>{renderFocalModal()}{renderDeleteModal()}</div>;
+  return <div style={{ ...pageStyle, height: "100vh", overflow: "hidden" }}><AdminNav onSignOut={handleSignOut} /><header style={{ height: 68, borderBottom: `1px solid ${COLORS.border}`, background: COLORS.surfaceDark || "#060606", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", padding: "0 1.5rem", position: "sticky", top: 56, zIndex: 40 }}><div style={{ display: "flex", alignItems: "center", gap: "1rem", minWidth: 0 }}><button type="button" onClick={() => navigate("/admin/galleries")} style={buttonStyle}>← Galleries</button><div style={{ minWidth: 0 }}><h1 style={{ color: COLORS.white, fontFamily: "'Playfair Display', serif", fontSize: "1.15rem", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{gallery.title || "Untitled Gallery"}</h1><div style={{ color: COLORS.muted, fontFamily: "'Inter', sans-serif", fontSize: 12 }}>{formatDate(gallery.event_date)} · {photos.length} photo{photos.length === 1 ? "" : "s"}</div></div><StatusPill status={gallery.status} onClick={toggleGalleryVisibility} /></div><div style={{ display: "flex", gap: "0.65rem", alignItems: "center" }}><button type="button" onClick={openPreview} style={buttonStyle}>Preview</button><button type="button" onClick={openShareModal} style={buttonStyle}>Share</button><button type="button" onClick={saveGallery} disabled={saving} style={primaryButtonStyle}>{saving ? "Saving..." : "Save Gallery"}</button><button type="button" onClick={() => openDeleteModal("gallery", gallery)} style={{ ...buttonStyle, color: "#ff8b8b", borderColor: "rgba(255,139,139,0.45)" }}>Delete Gallery</button></div></header><div style={{ display: "grid", gridTemplateColumns: "360px minmax(0, 1fr)", height: "calc(100vh - 124px)", overflow: "hidden" }}><aside style={{ borderRight: `1px solid ${COLORS.border}`, background: COLORS.surfaceDark || "#060606", height: "calc(100vh - 124px)", overflow: "hidden", display: "flex", flexDirection: "column" }} onWheel={(event) => event.stopPropagation()}><button type="button" aria-label="Open cover design controls" onClick={() => { setActiveTab("design"); setDesignSection("cover"); }} style={{ aspectRatio: "16 / 9", width: "100%", backgroundColor: "rgba(255,255,255,0.035)", backgroundImage: getCoverUrl(coverPhoto) ? `url(${getCoverUrl(coverPhoto)})` : "linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02))", backgroundPosition: `${gallery.cover_focal_x ?? 50}% ${gallery.cover_focal_y ?? 50}%`, backgroundSize: "cover", backgroundRepeat: "no-repeat", border: "none", borderBottom: `1px solid ${COLORS.border}`, cursor: "pointer", flexShrink: 0 }} /><div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", borderBottom: `1px solid ${COLORS.border}`, flexShrink: 0 }}>{SIDEBAR_TABS.map((tab) => <button key={tab.id} type="button" onClick={() => { setActiveTab(tab.id); closeWorkspaceMenus(); }} style={{ background: activeTab === tab.id ? "rgba(255,255,255,0.07)" : "transparent", border: "none", borderRight: `1px solid ${COLORS.border}`, color: activeTab === tab.id ? COLORS.gold : COLORS.muted, cursor: "pointer", fontFamily: "'Inter', sans-serif", fontSize: 10, fontWeight: 800, letterSpacing: "0.08em", padding: "0.75rem 0.35rem", textTransform: "uppercase" }} title={tab.label}><div style={{ fontSize: 16, marginBottom: 4 }}>{tab.icon}</div>{tab.label}</button>)}</div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", padding: activeTab === "design" ? "1rem 0.75rem" : "1rem" }} onWheel={(event) => event.stopPropagation()}>{error && <div style={{ border: "1px solid rgba(224,92,92,0.35)", color: "#ff8b8b", fontFamily: "'Inter', sans-serif", fontSize: 12, lineHeight: 1.5, marginBottom: "1rem", padding: "0.75rem" }}>{error}</div>}{notice && <div style={{ border: "1px solid rgba(74,222,128,0.28)", color: "#9af0b8", fontFamily: "'Inter', sans-serif", fontSize: 12, lineHeight: 1.5, marginBottom: "1rem", padding: "0.75rem" }}>{notice}</div>}{renderActivePanel()}</div></aside>{activeTab === "photos" ? renderPhotosWorkspace() : <main style={{ background: "#f4f4f4", height: "calc(100vh - 124px)", overflowY: "auto", overflowX: "hidden", padding: "3rem 2rem", boxSizing: "border-box" }}><GalleryPreview gallery={gallery} sections={sections} photos={photos} coverPhoto={coverPhoto} previewMode={previewMode} /></main>}</div>{renderShareModal()}{renderFocalModal()}{renderDeleteModal()}</div>;
 }
