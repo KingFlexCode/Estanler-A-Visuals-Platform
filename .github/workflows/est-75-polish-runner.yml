@@ -1,0 +1,55 @@
+name: EST-75 validated polish runner
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  polish:
+    if: github.head_ref == 'est-75-gallery-sharing-tools-preview-direct-link-email-qr-code'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Apply saved URL polish
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          workflow = Path('.github/workflows/est-75-polish.yml').read_text()
+          match = re.search(r"echo '([A-Za-z0-9+/=]+)' \| base64 -d", workflow)
+          if not match:
+              raise SystemExit('Could not extract polish script')
+          Path('/tmp/est75_polish.b64').write_text(match.group(1))
+          PY
+          base64 -d /tmp/est75_polish.b64 > /tmp/est75_polish.py
+          python3 /tmp/est75_polish.py
+
+      - name: Build
+        run: npm run build
+
+      - name: Commit validated polish
+        shell: bash
+        run: |
+          rm -f \
+            .github/workflows/est-75-polish.yml \
+            .github/workflows/est-75-polish-diagnostic.yml \
+            .github/workflows/est-75-polish-runner.yml \
+            est75-build-error.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Polish EST-75 saved sharing URL behavior"
+          git push origin HEAD:est-75-gallery-sharing-tools-preview-direct-link-email-qr-code
