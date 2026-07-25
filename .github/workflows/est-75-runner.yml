@@ -1,0 +1,58 @@
+name: EST-75 validated runner
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  implement:
+    if: github.head_ref == 'est-75-gallery-sharing-tools-preview-direct-link-email-qr-code'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out EST-75 branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Install QR dependency
+        run: npm install qrcode@^1.5.4 --save
+
+      - name: Extract and run implementation
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/est-75-implementation.yml')
+          lines = workflow.read_text().splitlines()
+          start = next(index for index, line in enumerate(lines) if line.strip() == "python3 - <<'PY'")
+          end = next(index for index in range(start + 1, len(lines)) if lines[index].strip() == 'PY')
+          script_lines = []
+          for line in lines[start + 1:end]:
+              script_lines.append(line[10:] if line.startswith('          ') else line)
+          Path('/tmp/est75_implement.py').write_text('\n'.join(script_lines) + '\n')
+          PY
+          python3 /tmp/est75_implement.py
+
+      - name: Build
+        run: npm run build
+
+      - name: Commit validated EST-75 implementation
+        shell: bash
+        run: |
+          rm -f \
+            .github/workflows/est-75-implementation.yml \
+            .github/workflows/est-75-pr-trigger.yml \
+            .github/workflows/est-75-diagnostic.yml \
+            .github/workflows/est-75-runner.yml \
+            est75-error.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Implement EST-75 gallery sharing tools"
+          git push origin HEAD:est-75-gallery-sharing-tools-preview-direct-link-email-qr-code
