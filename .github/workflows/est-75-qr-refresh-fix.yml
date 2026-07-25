@@ -1,15 +1,16 @@
 name: EST-75 QR refresh fix
 
 on:
-  push:
+  pull_request:
     branches:
-      - est-75-gallery-sharing-tools-preview-direct-link-email-qr-code
+      - main
 
 permissions:
   contents: write
 
 jobs:
   fix:
+    if: github.head_ref == 'est-75-gallery-sharing-tools-preview-direct-link-email-qr-code'
     runs-on: ubuntu-latest
     steps:
       - name: Check out EST-75 branch
