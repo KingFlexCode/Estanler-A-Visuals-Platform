@@ -1,111 +1,120 @@
 const CONTROL_HIDE_DELAY_MS = 2400;
 const SWIPE_MIN_DISTANCE_PX = 56;
 const SWIPE_DISTANCE_RATIO = 0.12;
+const VIEWER_SEARCH_FRAMES = 30;
+
+function isPublicClientGalleryRoute() {
+  return /^\/gallery\/[^/]+/.test(window.location.pathname);
+}
+
+function isViewerOpeningInteraction(target) {
+  if (!(target instanceof Element)) return false;
+
+  if (target.closest('button[title="Play slideshow"]')) return true;
+  if (target.closest("button")) return false;
+
+  return Boolean(target.closest("main#gallery-sections article"));
+}
 
 function findPublicGalleryLightbox() {
   const candidates = document.querySelectorAll('div[style*="position: fixed"]');
 
-  return [...candidates].find((element) => {
-    if (element.dataset.est114Lightbox === "true") return true;
-    if (window.getComputedStyle(element).zIndex !== "220") return false;
-    if (!element.querySelector("img")) return false;
-    return [...element.querySelectorAll("button")].some(
-      (button) => button.textContent?.trim() === "×",
-    );
-  }) || null;
+  return (
+    [...candidates].find((element) => {
+      if (element.dataset.est114Lightbox === "true") return true;
+      if (window.getComputedStyle(element).zIndex !== "220") return false;
+      if (!element.querySelector("img")) return false;
+
+      return [...element.querySelectorAll("button")].some(
+        (button) => button.textContent?.trim() === "×",
+      );
+    }) || null
+  );
 }
 
 function navButton(stage, direction) {
   const symbol = direction < 0 ? "‹" : "›";
-  return [...stage.querySelectorAll("button")].find(
-    (button) => button.textContent?.trim() === symbol,
-  ) || null;
+  return (
+    [...stage.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === symbol,
+    ) || null
+  );
+}
+
+function injectGalleryLayoutFixes() {
+  if (document.getElementById("est114-gallery-layout-fixes")) return;
+
+  const style = document.createElement("style");
+  style.id = "est114-gallery-layout-fixes";
+  style.textContent = `
+    main#gallery-sections div[style*="columns"] > article {
+      display: inline-block !important;
+      width: 100% !important;
+      margin-top: 0 !important;
+      vertical-align: top !important;
+      break-inside: avoid-column !important;
+      -webkit-column-break-inside: avoid !important;
+    }
+  `;
+  document.head.appendChild(style);
 }
 
 export function installPublicGalleryViewerEnhancements() {
-  if (
-    typeof window === "undefined" ||
-    window.__est114PublicGalleryViewerEnhancementsInstalled
-  ) {
-    return;
-  }
+  if (typeof window === "undefined") return;
+  if (window.__est114PublicGalleryViewerEnhancementsV2Installed) return;
 
-  window.__est114PublicGalleryViewerEnhancementsInstalled = true;
+  window.__est114PublicGalleryViewerEnhancementsV2Installed = true;
+  injectGalleryLayoutFixes();
+
+  const baselineDocumentStyles = {
+    overflow: document.documentElement.style.overflow,
+    overscrollBehavior: document.documentElement.style.overscrollBehavior,
+  };
+  const baselineBodyStyles = {
+    overflow: document.body.style.overflow,
+    overscrollBehavior: document.body.style.overscrollBehavior,
+    touchAction: document.body.style.touchAction,
+  };
 
   let activeOverlay = null;
-  let activeImage = null;
-  let activeImageSrc = "";
+  let cleanupActiveViewer = null;
   let controlsTimer = null;
-  let pendingEnterDirection = 0;
-  let cleanupOverlayListeners = null;
-  let syncFrame = null;
-  let bodyLocked = false;
-  let lockedScrollY = 0;
-  let savedDocumentStyles = null;
-  let savedBodyStyles = null;
+  let searchFrame = null;
+  let remainingSearchFrames = 0;
+  let savedScrollY = 0;
 
   function lockBackgroundScroll() {
-    if (bodyLocked) return;
-
-    bodyLocked = true;
-    lockedScrollY = window.scrollY || window.pageYOffset || 0;
-    savedDocumentStyles = {
-      overflow: document.documentElement.style.overflow,
-      overscrollBehavior: document.documentElement.style.overscrollBehavior,
-    };
-    savedBodyStyles = {
-      position: document.body.style.position,
-      top: document.body.style.top,
-      left: document.body.style.left,
-      right: document.body.style.right,
-      width: document.body.style.width,
-      overflow: document.body.style.overflow,
-      touchAction: document.body.style.touchAction,
-      overscrollBehavior: document.body.style.overscrollBehavior,
-    };
-
     document.documentElement.style.overflow = "hidden";
     document.documentElement.style.overscrollBehavior = "none";
-    document.body.style.position = "fixed";
-    document.body.style.top = `-${lockedScrollY}px`;
-    document.body.style.left = "0";
-    document.body.style.right = "0";
-    document.body.style.width = "100%";
     document.body.style.overflow = "hidden";
-    document.body.style.touchAction = "none";
     document.body.style.overscrollBehavior = "none";
   }
 
   function unlockBackgroundScroll() {
-    if (!bodyLocked) return;
-
-    document.documentElement.style.overflow = savedDocumentStyles?.overflow || "";
+    document.documentElement.style.overflow = baselineDocumentStyles.overflow;
     document.documentElement.style.overscrollBehavior =
-      savedDocumentStyles?.overscrollBehavior || "";
-    document.body.style.position = savedBodyStyles?.position || "";
-    document.body.style.top = savedBodyStyles?.top || "";
-    document.body.style.left = savedBodyStyles?.left || "";
-    document.body.style.right = savedBodyStyles?.right || "";
-    document.body.style.width = savedBodyStyles?.width || "";
-    document.body.style.overflow = savedBodyStyles?.overflow || "";
-    document.body.style.touchAction = savedBodyStyles?.touchAction || "";
-    document.body.style.overscrollBehavior =
-      savedBodyStyles?.overscrollBehavior || "";
+      baselineDocumentStyles.overscrollBehavior;
+    document.body.style.overflow = baselineBodyStyles.overflow;
+    document.body.style.overscrollBehavior = baselineBodyStyles.overscrollBehavior;
+    document.body.style.touchAction = baselineBodyStyles.touchAction;
 
-    bodyLocked = false;
-    window.scrollTo(0, lockedScrollY);
+    window.requestAnimationFrame(() => {
+      window.scrollTo(0, savedScrollY);
+    });
   }
 
-  function currentParts() {
-    if (!activeOverlay) return null;
-    const [header, stage, footer] = activeOverlay.children;
+  function getParts(overlay = activeOverlay) {
+    if (!overlay) return null;
+
+    const [header, stage, footer] = overlay.children;
     const image = stage?.querySelector("img") || null;
+
     if (!header || !stage || !footer || !image) return null;
     return { header, stage, footer, image };
   }
 
   function setControlsVisible(visible) {
-    const parts = currentParts();
+    const parts = getParts();
     if (!parts) return;
 
     const { header, stage, footer } = parts;
@@ -148,32 +157,9 @@ export function installPublicGalleryViewerEnhancements() {
     scheduleControlsHide();
   }
 
-  function animateIncomingImage(image) {
-    if (!pendingEnterDirection) {
-      image.style.transform = "translate3d(0, 0, 0)";
-      image.style.opacity = "1";
-      return;
-    }
-
-    const direction = pendingEnterDirection;
-    pendingEnterDirection = 0;
-    image.style.transition = "none";
-    image.style.transform = `translate3d(${direction * 12}vw, 0, 0)`;
-    image.style.opacity = "0.62";
-
-    window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => {
-        image.style.transition =
-          "transform 240ms cubic-bezier(.22,.8,.28,1), opacity 220ms ease";
-        image.style.transform = "translate3d(0, 0, 0)";
-        image.style.opacity = "1";
-      });
-    });
-  }
-
-  function styleLightbox() {
-    const parts = currentParts();
-    if (!parts) return;
+  function styleLightbox(overlay) {
+    const parts = getParts(overlay);
+    if (!parts) return false;
 
     const { header, stage, footer, image } = parts;
     const metadata = header.firstElementChild;
@@ -183,7 +169,7 @@ export function installPublicGalleryViewerEnhancements() {
     const previousButton = navButton(stage, -1);
     const nextButton = navButton(stage, 1);
 
-    Object.assign(activeOverlay.style, {
+    Object.assign(overlay.style, {
       position: "fixed",
       inset: "0",
       width: "100vw",
@@ -195,9 +181,11 @@ export function installPublicGalleryViewerEnhancements() {
       touchAction: "none",
       background: "#000",
     });
-    activeOverlay.setAttribute("role", "dialog");
-    activeOverlay.setAttribute("aria-modal", "true");
-    activeOverlay.setAttribute("aria-label", "Full-screen gallery image viewer");
+
+    overlay.dataset.est114Lightbox = "true";
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-label", "Full-screen gallery image viewer");
 
     Object.assign(header.style, {
       position: "absolute",
@@ -261,7 +249,8 @@ export function installPublicGalleryViewerEnhancements() {
       WebkitUserSelect: "none",
       pointerEvents: "none",
       willChange: "transform, opacity",
-      transform: image.style.transform || "translate3d(0, 0, 0)",
+      transform: "translate3d(0, 0, 0)",
+      opacity: "1",
     });
     image.draggable = false;
 
@@ -270,6 +259,7 @@ export function installPublicGalleryViewerEnhancements() {
       [nextButton, "right"],
     ].forEach(([button, side]) => {
       if (!button) return;
+
       Object.assign(button.style, {
         position: "absolute",
         top: "50%",
@@ -289,6 +279,7 @@ export function installPublicGalleryViewerEnhancements() {
         WebkitBackdropFilter: "blur(10px)",
         transition: "opacity 220ms ease, background 180ms ease",
       });
+
       button.setAttribute(
         "aria-label",
         side === "left" ? "Previous photo" : "Next photo",
@@ -308,20 +299,35 @@ export function installPublicGalleryViewerEnhancements() {
       transition: "opacity 220ms ease, transform 220ms ease",
     });
 
-    const nextImageSrc = image.currentSrc || image.src || "";
-    if (activeImage !== image || activeImageSrc !== nextImageSrc) {
-      activeImage = image;
-      activeImageSrc = nextImageSrc;
-      animateIncomingImage(image);
-      showControls();
-    }
+    return true;
   }
 
-  function attachOverlayListeners(overlay) {
-    const parts = currentParts();
-    if (!parts) return () => undefined;
+  function deactivateViewer() {
+    if (!activeOverlay) return;
 
-    const { stage } = parts;
+    cleanupActiveViewer?.();
+    cleanupActiveViewer = null;
+    activeOverlay = null;
+    window.clearTimeout(controlsTimer);
+    unlockBackgroundScroll();
+  }
+
+  function activateViewer(overlay) {
+    if (!overlay || overlay === activeOverlay) return;
+    if (!styleLightbox(overlay)) return;
+
+    deactivateViewer();
+    activeOverlay = overlay;
+    lockBackgroundScroll();
+
+    const parts = getParts();
+    if (!parts) return;
+
+    const { header, stage, image } = parts;
+    const closeButton = [...header.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "×",
+    );
+
     let pointerId = null;
     let startX = 0;
     let startY = 0;
@@ -329,8 +335,6 @@ export function installPublicGalleryViewerEnhancements() {
     let dragging = false;
 
     const resetImage = () => {
-      const image = currentParts()?.image;
-      if (!image) return;
       image.style.transition =
         "transform 220ms cubic-bezier(.22,.8,.28,1), opacity 180ms ease";
       image.style.transform = "translate3d(0, 0, 0)";
@@ -338,11 +342,13 @@ export function installPublicGalleryViewerEnhancements() {
     };
 
     const finishSwipe = (event) => {
-      if (pointerId === null || (event.pointerId !== undefined && event.pointerId !== pointerId)) {
+      if (
+        pointerId === null ||
+        (event.pointerId !== undefined && event.pointerId !== pointerId)
+      ) {
         return;
       }
 
-      const image = currentParts()?.image;
       const stageWidth = stage.clientWidth || window.innerWidth || 1;
       const threshold = Math.max(
         SWIPE_MIN_DISTANCE_PX,
@@ -350,22 +356,33 @@ export function installPublicGalleryViewerEnhancements() {
       );
       const direction = deltaX < 0 ? 1 : -1;
       const targetButton = navButton(stage, direction);
-      const shouldNavigate = dragging && Math.abs(deltaX) >= threshold && targetButton;
+      const shouldNavigate =
+        dragging && Math.abs(deltaX) >= threshold && targetButton;
 
-      if (shouldNavigate && image) {
-        pendingEnterDirection = direction;
+      if (shouldNavigate) {
         image.style.transition =
           "transform 180ms cubic-bezier(.4,0,.7,.2), opacity 160ms ease";
         image.style.transform = `translate3d(${direction > 0 ? "-110vw" : "110vw"}, 0, 0)`;
         image.style.opacity = "0.42";
-        window.setTimeout(() => targetButton.click(), 145);
+
+        window.setTimeout(() => {
+          targetButton.click();
+          image.style.transition = "none";
+          image.style.transform = `translate3d(${direction > 0 ? "12vw" : "-12vw"}, 0, 0)`;
+          image.style.opacity = "0.62";
+
+          window.requestAnimationFrame(() => {
+            window.requestAnimationFrame(resetImage);
+          });
+        }, 145);
       } else {
         resetImage();
       }
 
-      if (pointerId !== null && stage.hasPointerCapture?.(pointerId)) {
+      if (stage.hasPointerCapture?.(pointerId)) {
         stage.releasePointerCapture(pointerId);
       }
+
       pointerId = null;
       deltaX = 0;
       dragging = false;
@@ -384,18 +401,16 @@ export function installPublicGalleryViewerEnhancements() {
       dragging = false;
       stage.setPointerCapture?.(pointerId);
       stage.style.cursor = "grabbing";
-      const image = currentParts()?.image;
-      if (image) image.style.transition = "none";
+      image.style.transition = "none";
       showControls();
     };
 
     const onPointerMove = (event) => {
       if (pointerId === null || event.pointerId !== pointerId) return;
-      const image = currentParts()?.image;
-      if (!image) return;
 
       const nextDeltaX = event.clientX - startX;
       const deltaY = event.clientY - startY;
+
       if (!dragging) {
         if (Math.abs(nextDeltaX) < 8) return;
         if (Math.abs(deltaY) > Math.abs(nextDeltaX) * 1.15) return;
@@ -404,84 +419,94 @@ export function installPublicGalleryViewerEnhancements() {
 
       event.preventDefault();
       deltaX = nextDeltaX;
+
       const stageWidth = stage.clientWidth || window.innerWidth || 1;
-      const opacity = 1 - Math.min(Math.abs(deltaX) / (stageWidth * 1.7), 0.28);
+      const opacity =
+        1 - Math.min(Math.abs(deltaX) / (stageWidth * 1.7), 0.28);
+
       image.style.transform = `translate3d(${deltaX}px, 0, 0) scale(.995)`;
       image.style.opacity = String(opacity);
     };
 
-    const onOverlayClick = (event) => {
+    const preventOverlayScroll = (event) => event.preventDefault();
+    const onOverlayActivity = (event) => {
       if (event.target.closest?.("button")) return;
       showControls();
     };
+    const onKeyDown = (event) => {
+      if (!activeOverlay) return;
 
-    const onActivity = () => showControls();
+      if (event.key === "Escape") {
+        window.setTimeout(deactivateViewer, 0);
+        return;
+      }
+
+      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+        showControls();
+      }
+    };
+    const onClose = () => window.setTimeout(deactivateViewer, 0);
 
     stage.addEventListener("pointerdown", onPointerDown);
     stage.addEventListener("pointermove", onPointerMove, { passive: false });
     stage.addEventListener("pointerup", finishSwipe);
     stage.addEventListener("pointercancel", finishSwipe);
-    overlay.addEventListener("click", onOverlayClick);
-    overlay.addEventListener("pointermove", onActivity, { passive: true });
+    overlay.addEventListener("click", onOverlayActivity);
+    overlay.addEventListener("wheel", preventOverlayScroll, { passive: false });
+    overlay.addEventListener("touchmove", preventOverlayScroll, { passive: false });
+    closeButton?.addEventListener("click", onClose);
+    document.addEventListener("keydown", onKeyDown);
 
-    return () => {
+    cleanupActiveViewer = () => {
       stage.removeEventListener("pointerdown", onPointerDown);
       stage.removeEventListener("pointermove", onPointerMove);
       stage.removeEventListener("pointerup", finishSwipe);
       stage.removeEventListener("pointercancel", finishSwipe);
-      overlay.removeEventListener("click", onOverlayClick);
-      overlay.removeEventListener("pointermove", onActivity);
+      overlay.removeEventListener("click", onOverlayActivity);
+      overlay.removeEventListener("wheel", preventOverlayScroll);
+      overlay.removeEventListener("touchmove", preventOverlayScroll);
+      closeButton?.removeEventListener("click", onClose);
+      document.removeEventListener("keydown", onKeyDown);
     };
+
+    showControls();
   }
 
-  function clearActiveOverlay() {
-    cleanupOverlayListeners?.();
-    cleanupOverlayListeners = null;
-    activeOverlay = null;
-    activeImage = null;
-    activeImageSrc = "";
-    pendingEnterDirection = 0;
-    window.clearTimeout(controlsTimer);
-    unlockBackgroundScroll();
-  }
+  function searchForOpenedViewer() {
+    searchFrame = null;
 
-  function syncLightbox() {
-    syncFrame = null;
     const overlay = findPublicGalleryLightbox();
-
-    if (!overlay) {
-      if (activeOverlay) clearActiveOverlay();
+    if (overlay) {
+      activateViewer(overlay);
       return;
     }
 
-    if (overlay !== activeOverlay) {
-      clearActiveOverlay();
-      activeOverlay = overlay;
-      activeOverlay.dataset.est114Lightbox = "true";
-      lockBackgroundScroll();
-      styleLightbox();
-      cleanupOverlayListeners = attachOverlayListeners(overlay);
-      showControls();
-      return;
+    remainingSearchFrames -= 1;
+    if (remainingSearchFrames > 0) {
+      searchFrame = window.requestAnimationFrame(searchForOpenedViewer);
     }
-
-    styleLightbox();
   }
 
-  function scheduleSync() {
-    if (syncFrame !== null) return;
-    syncFrame = window.requestAnimationFrame(syncLightbox);
+  function scheduleViewerSearch() {
+    window.cancelAnimationFrame(searchFrame);
+    remainingSearchFrames = VIEWER_SEARCH_FRAMES;
+    searchFrame = window.requestAnimationFrame(searchForOpenedViewer);
   }
 
-  const observer = new MutationObserver(scheduleSync);
-  observer.observe(document.documentElement, {
-    childList: true,
-    subtree: true,
-    attributes: true,
-    attributeFilter: ["src"],
-  });
+  function captureViewerOpening(event) {
+    if (!isPublicClientGalleryRoute()) return;
+    if (!isViewerOpeningInteraction(event.target)) return;
 
-  window.addEventListener("resize", scheduleSync, { passive: true });
-  window.addEventListener("orientationchange", scheduleSync, { passive: true });
-  scheduleSync();
+    savedScrollY = window.scrollY || window.pageYOffset || 0;
+    scheduleViewerSearch();
+  }
+
+  document.addEventListener("click", captureViewerOpening, true);
+  window.addEventListener("pagehide", deactivateViewer);
+
+  const existingOverlay = findPublicGalleryLightbox();
+  if (existingOverlay) {
+    savedScrollY = window.scrollY || window.pageYOffset || 0;
+    activateViewer(existingOverlay);
+  }
 }
