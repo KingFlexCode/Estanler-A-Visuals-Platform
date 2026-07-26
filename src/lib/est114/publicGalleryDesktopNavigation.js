@@ -45,19 +45,19 @@ export function installPublicGalleryDesktopNavigation() {
   injectDesktopNavigationStyles();
 
   const blockDesktopSwipe = (event) => {
-    if (!isDesktopPointerLayout()) return;
+    if (!isDesktopPointerLayout() || event.pointerType === "touch") return;
 
     const parts = activeViewerParts();
     if (!parts || !parts.stage.contains(event.target)) return;
     if (event.target.closest?.("button")) return;
 
-    // The original EST-114 pointer handlers remain available for coarse touch
-    // devices, but mouse and trackpad gestures never reach them on desktop.
+    // Mouse and trackpad drags are disabled on desktop. Touch pointers remain
+    // available for swipe, pinch-to-zoom, and panning on hybrid devices.
     event.stopImmediatePropagation();
   };
 
   const navigateFromDesktopGutter = (event) => {
-    if (!isDesktopPointerLayout()) return;
+    if (!isDesktopPointerLayout() || event.pointerType === "touch") return;
 
     const parts = activeViewerParts();
     if (!parts || !parts.stage.contains(event.target)) return;
