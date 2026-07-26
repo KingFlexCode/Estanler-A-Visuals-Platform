@@ -39,6 +39,12 @@ function stabilizePublicGalleryPhotoCards() {
       );
       code = replaceRequired(
         code,
+        '    const isMosaicFeature = mode === "mosaic" && index % 7 === 0;\n',
+        '    const isMosaicFeature = mode === "mosaic" && index % 7 === 0;\n    const isColumnMode = !["square", "horizontal", "mosaic", "filmstrip"].includes(mode);\n    const cardGap = mode === "clean" || mode === "editorial" ? 18 : 8;\n',
+        "masonry card layout helpers",
+      );
+      code = replaceRequired(
+        code,
         '    return <article onClick={() => setLightbox(photo)} onMouseEnter={() => setHoveredPhotoId(photo.id)} onMouseLeave={() => setHoveredPhotoId(null)} style={{',
         '    return <article key={photo.id} onClick={() => setLightbox(photo)} style={{',
         "photo article hover handlers",
@@ -46,8 +52,20 @@ function stabilizePublicGalleryPhotoCards() {
       code = replaceRequired(
         code,
         'marginBottom: mode === "clean" || mode === "editorial" ? 18 : 8,',
-        'marginBottom: 0, borderBottom: `${mode === "clean" || mode === "editorial" ? 18 : 8}px solid transparent`, backgroundClip: "padding-box",',
+        'marginBottom: isColumnMode ? 0 : cardGap, paddingBottom: isColumnMode ? cardGap : 0,',
         "masonry card spacing",
+      );
+      code = replaceRequired(
+        code,
+        'overflow: "hidden", background: "#111", cursor:',
+        'overflow: "hidden", background: isColumnMode ? "#f4f2ee" : "#111", cursor:',
+        "masonry card background",
+      );
+      code = replaceRequired(
+        code,
+        'position: "absolute", left: 0, right: 0, bottom: 0, minHeight: 82,',
+        'position: "absolute", left: 0, right: 0, bottom: isColumnMode ? cardGap : 0, minHeight: 82,',
+        "photo action position",
       );
       code = replaceRequired(
         code,
