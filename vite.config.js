@@ -103,6 +103,12 @@ function stabilizePublicGalleryPhotoCards() {
         'items.map((photo, index) => renderPhotoCard(photo, gridStyle, index))',
         "column photo cards",
       );
+      code = replaceRequired(
+        code,
+        "lightbox.title || lightbox.file_name || gallery.title",
+        "lightbox.file_name || lightbox.title || gallery.title",
+        "full viewer filename",
+      );
 
       return { code, map: null };
     },
