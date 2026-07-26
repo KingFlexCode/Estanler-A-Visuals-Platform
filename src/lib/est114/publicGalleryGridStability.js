@@ -24,6 +24,25 @@ function installGalleryHoverStyles() {
         pointer-events: auto !important;
       }
     }
+
+    /*
+     * CSS multi-column layouts create an inline line box when masonry cards are
+     * balanced into later columns. Removing that line-height and top-aligning
+     * each card keeps the first image in every column on the same baseline.
+     */
+    main#gallery-sections div[style*="columns"] {
+      line-height: 0 !important;
+    }
+
+    main#gallery-sections div[style*="columns"] > article {
+      display: inline-block !important;
+      width: 100% !important;
+      margin-top: 0 !important;
+      vertical-align: top !important;
+      line-height: normal !important;
+      break-inside: avoid-column !important;
+      -webkit-column-break-inside: avoid !important;
+    }
   `;
   document.head.appendChild(style);
 }
