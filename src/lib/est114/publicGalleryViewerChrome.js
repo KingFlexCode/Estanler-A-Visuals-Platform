@@ -302,10 +302,17 @@ function decorateViewer(overlay) {
     }
   });
 
-  ["favorite", "download", "share", "play"].forEach((action) => {
-    const button = actions.get(action);
-    if (button && footer.lastElementChild !== button) footer.appendChild(button);
-  });
+  const desiredButtons = ["favorite", "download", "share", "play"]
+    .map((action) => actions.get(action))
+    .filter(Boolean);
+  const currentButtons = [...footer.querySelectorAll("button")].filter((button) =>
+    desiredButtons.includes(button),
+  );
+  const orderChanged = desiredButtons.some(
+    (button, index) => currentButtons[index] !== button,
+  );
+
+  if (orderChanged) desiredButtons.forEach((button) => footer.appendChild(button));
 }
 
 export function installPublicGalleryViewerChrome() {
