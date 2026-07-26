@@ -9,7 +9,7 @@ function directChildren(element) {
 }
 
 function updateToolsToggle(sidebar) {
-  const toggle = sidebar?.querySelector(".est115-gallery-editor-tools-toggle");
+  const toggle = sidebar?.querySelector(":scope > .est115-gallery-editor-tools-toggle");
   if (!toggle) return;
 
   const collapsed = sidebar.classList.contains("is-tools-collapsed");
@@ -22,7 +22,7 @@ function ensureToolsToggle(sidebar, tabs, panel) {
 
   panel.id = "est115-gallery-editor-tools-panel";
 
-  let toggle = sidebar.querySelector(".est115-gallery-editor-tools-toggle");
+  let toggle = sidebar.querySelector(":scope > .est115-gallery-editor-tools-toggle");
   if (!toggle) {
     toggle = document.createElement("button");
     toggle.type = "button";
@@ -30,6 +30,8 @@ function ensureToolsToggle(sidebar, tabs, panel) {
     toggle.setAttribute("aria-controls", panel.id);
     tabs.insertAdjacentElement("afterend", toggle);
   }
+
+  toggle.classList.remove("est115-gallery-editor-sidebar-panel");
 
   if (sidebar.dataset.est115ToolsInitialized !== "true") {
     sidebar.dataset.est115ToolsInitialized = "true";
@@ -71,7 +73,6 @@ function markEditorModals(editorRoot) {
       if (columns.includes("minmax(0, 1.2fr)") || columns.includes("repeat(2")) {
         child.classList.add("est115-gallery-editor-modal-grid");
       }
-
       if (child.style.display === "flex" && child.style.justifyContent === "flex-end") {
         child.classList.add("est115-gallery-editor-modal-actions");
       }
@@ -79,19 +80,17 @@ function markEditorModals(editorRoot) {
   });
 }
 
-function markSidebarLayouts(sidebarPanel) {
-  sidebarPanel?.querySelectorAll("div, nav").forEach((element) => {
+function markSidebarLayouts(panel) {
+  panel?.querySelectorAll("div, nav").forEach((element) => {
     const columns = element.style.gridTemplateColumns || "";
 
     if (columns.includes("96px") && columns.includes("minmax")) {
       element.classList.add("est115-gallery-editor-design-layout");
       element.firstElementChild?.classList.add("est115-gallery-editor-design-tabs");
     }
-
     if (columns === "1fr auto") {
       element.classList.add("est115-gallery-editor-inline-form");
     }
-
     if (columns === "1fr 1fr" || columns.includes("repeat(2")) {
       element.classList.add("est115-gallery-editor-two-column-control");
     }
@@ -103,8 +102,7 @@ function markWorkspace(main) {
 
   main.classList.add("est115-gallery-editor-main");
 
-  const children = directChildren(main);
-  const heading = children.find((element) => element.querySelector?.("h2"));
+  const heading = directChildren(main).find((element) => element.querySelector?.("h2"));
   if (heading) {
     heading.classList.add("est115-gallery-editor-workspace-heading");
     heading.lastElementChild?.classList.add("est115-gallery-editor-workspace-toolbar");
@@ -112,11 +110,9 @@ function markWorkspace(main) {
 
   main.querySelectorAll("div").forEach((element) => {
     const columns = element.style.gridTemplateColumns || "";
-
     if (columns.includes("auto-fill") && columns.includes("minmax")) {
       element.classList.add("est115-gallery-editor-photo-grid");
     }
-
     if (element.style.position === "absolute" && element.style.width === "290px") {
       element.classList.add("est115-gallery-editor-toolbar-menu");
     }
@@ -127,10 +123,43 @@ function markWorkspace(main) {
     if (columns.includes("56px") && columns.includes("86px")) {
       article.classList.add("est115-gallery-editor-list-item");
       article.parentElement?.classList.add("est115-gallery-editor-list");
+      article.classList.remove("est115-gallery-editor-photo-card");
     } else {
       article.classList.add("est115-gallery-editor-photo-card");
+      article.classList.remove("est115-gallery-editor-list-item");
     }
   });
+}
+
+function findSidebarParts(sidebar) {
+  const children = directChildren(sidebar);
+  const injectedToggle = sidebar?.querySelector(":scope > .est115-gallery-editor-tools-toggle");
+
+  const cover =
+    sidebar?.querySelector(":scope > .est115-gallery-editor-cover") ||
+    children.find((element) => element.tagName === "BUTTON" && element.style.aspectRatio);
+
+  const tabs =
+    sidebar?.querySelector(":scope > .est115-gallery-editor-tabs") ||
+    children.find((element) =>
+      (element.style.gridTemplateColumns || "").includes("repeat(4"),
+    );
+
+  const panel =
+    sidebar?.querySelector(":scope > .est115-gallery-editor-sidebar-panel") ||
+    children.find(
+      (element) =>
+        element !== cover &&
+        element !== tabs &&
+        element !== injectedToggle &&
+        (element.style.flex === "1" || element.style.overflowY === "auto"),
+    ) ||
+    children.find(
+      (element) =>
+        element !== cover && element !== tabs && element !== injectedToggle,
+    );
+
+  return { cover, tabs, panel };
 }
 
 function classifyGalleryEditor() {
@@ -144,7 +173,6 @@ function classifyGalleryEditor() {
   const editorRoot = nav?.parentElement;
   const header = nav?.nextElementSibling;
   const workspace = header?.nextElementSibling;
-
   if (!editorRoot || !header || !workspace) return;
 
   editorRoot.classList.add("est115-gallery-editor-root");
@@ -156,9 +184,9 @@ function classifyGalleryEditor() {
 
   workspace.classList.add("est115-gallery-editor-workspace");
   const [sidebar, main] = directChildren(workspace);
-
   sidebar?.classList.add("est115-gallery-editor-sidebar");
-  const [cover, tabs, panel] = directChildren(sidebar);
+
+  const { cover, tabs, panel } = findSidebarParts(sidebar);
   cover?.classList.add("est115-gallery-editor-cover");
   tabs?.classList.add("est115-gallery-editor-tabs");
   panel?.classList.add("est115-gallery-editor-sidebar-panel");
@@ -463,10 +491,6 @@ function injectGalleryEditorStyles() {
     @media (max-width: 700px) {
       html.est115-gallery-editor .est115-gallery-editor-header {
         padding: 0.85rem !important;
-      }
-
-      html.est115-gallery-editor .est115-gallery-editor-header-actions {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
       }
 
       html.est115-gallery-editor .est115-gallery-editor-header-actions > button:last-child {
