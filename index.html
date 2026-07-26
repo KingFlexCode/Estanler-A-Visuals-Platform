@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Estanler A Visuals — Photography & Film | New York</title>
     <meta
       name="description"
@@ -22,8 +22,10 @@
     <script type="module">
       import { installGalleryFavoriteSync } from "/src/lib/clientGalleryFavorites.jsx";
       import { installClientGalleryVisitorActivity } from "/src/lib/est83/index.js";
+      import { installPublicGalleryViewerEnhancements } from "/src/lib/est114/publicGalleryViewerEnhancements.js";
       installGalleryFavoriteSync();
       installClientGalleryVisitorActivity();
+      installPublicGalleryViewerEnhancements();
     </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
