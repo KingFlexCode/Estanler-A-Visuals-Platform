@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Estanler A Visuals — Photography & Film | New York</title>
     <meta
       name="description"
@@ -22,8 +22,20 @@
     <script type="module">
       import { installGalleryFavoriteSync } from "/src/lib/clientGalleryFavorites.jsx";
       import { installClientGalleryVisitorActivity } from "/src/lib/est83/index.js";
+      import { installPublicGalleryViewerEnhancements } from "/src/lib/est114/publicGalleryViewerEnhancements.js";
+      import { installPublicGalleryViewerChrome } from "/src/lib/est114/publicGalleryViewerChrome.js";
+      import { installPublicGalleryViewerCentering } from "/src/lib/est114/publicGalleryViewerCentering.js";
+      import { installPublicGalleryTouchZoom } from "/src/lib/est114/publicGalleryTouchZoom.js";
+      import { installPublicGalleryDesktopNavigation } from "/src/lib/est114/publicGalleryDesktopNavigation.js";
+      import { installPublicGalleryGridStability } from "/src/lib/est114/publicGalleryGridStability.js";
       installGalleryFavoriteSync();
       installClientGalleryVisitorActivity();
+      installPublicGalleryViewerEnhancements();
+      installPublicGalleryViewerChrome();
+      installPublicGalleryViewerCentering();
+      installPublicGalleryTouchZoom();
+      installPublicGalleryDesktopNavigation();
+      installPublicGalleryGridStability();
     </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
