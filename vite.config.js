@@ -45,6 +45,12 @@ function stabilizePublicGalleryPhotoCards() {
       );
       code = replaceRequired(
         code,
+        'marginBottom: mode === "clean" || mode === "editorial" ? 18 : 8,',
+        'marginBottom: 0, borderBottom: `${mode === "clean" || mode === "editorial" ? 18 : 8}px solid transparent`, backgroundClip: "padding-box",',
+        "masonry card spacing",
+      );
+      code = replaceRequired(
+        code,
         "opacity: hovered ? 1 : 0,",
         "opacity: 0,",
         "photo action opacity",
