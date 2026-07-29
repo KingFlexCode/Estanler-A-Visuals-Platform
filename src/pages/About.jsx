@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import { COLORS, BASE } from "../lib/constants";
 import { Tag, GoldLine, Reveal } from "../components/UI";
 import Footer from "../components/Footer";
-import aboutPhoto from "../assets/my_about_picture.png";
+import aboutPhoto from "../assets/my_about_picture.webp";
 
 export default function About() {
   return (
