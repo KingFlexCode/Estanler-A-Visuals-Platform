@@ -1,6 +1,5 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import { imagePerformanceCleanup } from "./src/lib/est79/viteImagePerformanceCleanup.js";
 
 const PUBLIC_GALLERY_VIEWER_SUFFIX = "/src/pages/PublicGalleryViewer.jsx";
 
@@ -118,7 +117,6 @@ function stabilizePublicGalleryPhotoCards() {
 
 export default defineConfig({
   plugins: [
-    imagePerformanceCleanup(),
     stabilizePublicGalleryPhotoCards(),
     react(),
   ],

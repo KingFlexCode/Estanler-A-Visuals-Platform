@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { COLORS, BASE } from "../lib/constants";
+import { COLORS } from "../lib/constants";
 import { Tag, GoldLine, Reveal } from "../components/UI";
 import Footer from "../components/Footer";
 import aboutPhoto from "../assets/my_about_picture.webp";
@@ -37,7 +37,10 @@ export default function About() {
               <img
                 src={aboutPhoto}
                 alt="Estanler Aleman, photographer and visual storyteller"
-                loading="lazy"
+                width={1714}
+                height={2400}
+                loading="eager"
+                fetchPriority="high"
                 decoding="async"
                 style={{
                   width: "100%",

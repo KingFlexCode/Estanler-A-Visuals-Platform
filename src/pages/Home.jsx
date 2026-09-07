@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import Footer from "../components/Footer";
 import { GoldLine, Reveal, Spinner, Tag } from "../components/UI";
@@ -28,7 +28,7 @@ const testimonials = [
 
 function mapHeroRow(image) {
   const heroPath =
-    image.display_path || image.original_path || image.thumbnail_path;
+    image.display_path || image.thumbnail_path || image.original_path;
 
   return {
     id: image.id,
@@ -47,10 +47,7 @@ function buildPublicUrl(path) {
 
 function mapPortfolioRow(image) {
   const gridPath =
-    image.display_path || image.original_path || image.thumbnail_path;
-
-  const previewPath =
-    image.original_path || image.display_path || image.thumbnail_path;
+    image.display_path || image.thumbnail_path || image.original_path;
 
   return {
     id: image.id,
@@ -58,7 +55,8 @@ function mapPortfolioRow(image) {
     aspect: image.aspect_ratio || "4 / 5",
     label: image.title || image.file_name,
     img: buildPublicUrl(gridPath),
-    fullImg: buildPublicUrl(previewPath),
+    width: image.display_width || image.thumbnail_width || undefined,
+    height: image.display_height || image.thumbnail_height || undefined,
     objectPosition: `${image.object_position_x ?? 50}% ${
       image.object_position_y ?? 15
     }%`,
@@ -69,6 +67,7 @@ function mapPortfolioRow(image) {
 function Hero() {
   const [loaded, setLoaded] = useState(false);
   const [backgroundIndex, setBackgroundIndex] = useState(0);
+  const [previousBackgroundIndex, setPreviousBackgroundIndex] = useState(null);
   const [heroPhotos, setHeroPhotos] = useState([]);
 
   useEffect(() => {
@@ -81,7 +80,7 @@ function Hero() {
       const { data, error } = await supabase
         .from("portfolio_images")
         .select(
-          "id,display_path,original_path,thumbnail_path,object_position_x,object_position_y,zoom,featured,display_order,created_at",
+          "id,display_path,thumbnail_path,original_path,object_position_x,object_position_y,zoom,display_order,created_at",
         )
         .eq("is_visible", true)
         .eq("featured", true)
@@ -105,20 +104,63 @@ function Hero() {
   useEffect(() => {
     if (heroPhotos.length <= 1) return undefined;
 
-    const timer = setInterval(() => {
-      setBackgroundIndex(
-        (previousIndex) => (previousIndex + 1) % heroPhotos.length,
-      );
+    const timer = setTimeout(() => {
+      setPreviousBackgroundIndex(backgroundIndex);
+      setBackgroundIndex((backgroundIndex + 1) % heroPhotos.length);
     }, 5000);
 
-    return () => clearInterval(timer);
-  }, [heroPhotos.length]);
+    return () => clearTimeout(timer);
+  }, [backgroundIndex, heroPhotos.length]);
 
   useEffect(() => {
     if (backgroundIndex >= heroPhotos.length) {
       setBackgroundIndex(0);
+      setPreviousBackgroundIndex(null);
     }
   }, [backgroundIndex, heroPhotos.length]);
+
+  useEffect(() => {
+    if (heroPhotos.length <= 1) return undefined;
+
+    const nextIndex = (backgroundIndex + 1) % heroPhotos.length;
+    const nextSource = heroPhotos[nextIndex]?.src;
+    if (!nextSource) return undefined;
+
+    const preload = new Image();
+    preload.decoding = "async";
+    preload.src = nextSource;
+
+    return () => {
+      preload.onload = null;
+      preload.onerror = null;
+    };
+  }, [backgroundIndex, heroPhotos]);
+
+  useEffect(() => {
+    if (previousBackgroundIndex === null) return undefined;
+
+    const timer = setTimeout(() => {
+      setPreviousBackgroundIndex(null);
+    }, 1500);
+
+    return () => clearTimeout(timer);
+  }, [previousBackgroundIndex]);
+
+  const renderedHeroPhotos = useMemo(() => {
+    const visibleIndexes = new Set([backgroundIndex]);
+    if (previousBackgroundIndex !== null) {
+      visibleIndexes.add(previousBackgroundIndex);
+    }
+
+    return heroPhotos
+      .map((photo, index) => ({ photo, index }))
+      .filter(({ index }) => visibleIndexes.has(index))
+      .sort(({ index: firstIndex }, { index: secondIndex }) => {
+        if (firstIndex === backgroundIndex) return 1;
+        if (secondIndex === backgroundIndex) return -1;
+        return 0;
+      });
+  }, [backgroundIndex, heroPhotos, previousBackgroundIndex]);
 
   return (
     <section
@@ -132,26 +174,32 @@ function Hero() {
         background: COLORS.bg,
       }}
     >
-      {heroPhotos.map((photo, index) => (
-        <img
-          key={photo.id}
-          src={photo.src}
-          alt="Featured portfolio background"
-          loading={index === 0 ? "eager" : "lazy"}
-          decoding="async"
-          style={{
-            position: "absolute",
-            inset: 0,
-            width: "100%",
-            height: "100%",
-            objectFit: "cover",
-            objectPosition: photo.objectPosition,
-            opacity: backgroundIndex === index ? (loaded ? 1 : 0) : 0,
-            transform: `scale(${photo.zoom || 1})`,
-            transition: "opacity 1.4s ease",
-          }}
-        />
-      ))}
+      {renderedHeroPhotos.map(({ photo, index }) => {
+        const isActive = index === backgroundIndex;
+
+        return (
+          <img
+            key={photo.id}
+            src={photo.src}
+            alt=""
+            aria-hidden="true"
+            loading="eager"
+            fetchPriority={isActive ? "high" : "auto"}
+            decoding="async"
+            style={{
+              position: "absolute",
+              inset: 0,
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              objectPosition: photo.objectPosition,
+              opacity: isActive ? (loaded ? 1 : 0) : 0,
+              transform: `scale(${photo.zoom || 1})`,
+              transition: "opacity 1.4s ease",
+            }}
+          />
+        );
+      })}
 
       <div
         style={{
@@ -306,7 +354,9 @@ function FeaturedWork() {
     async function fetchFeatured() {
       const { data, error } = await supabase
         .from("portfolio_images")
-        .select("*")
+        .select(
+          "id,category,aspect_ratio,title,file_name,display_path,thumbnail_path,original_path,display_width,display_height,thumbnail_width,thumbnail_height,object_position_x,object_position_y,zoom,featured_order,display_order,created_at",
+        )
         .eq("is_visible", true)
         .eq("featured", true)
         .neq("category", "unlisted")
@@ -321,7 +371,7 @@ function FeaturedWork() {
         return;
       }
 
-      setItems((data || []).map(mapPortfolioRow));
+      setItems((data || []).map(mapPortfolioRow).filter((item) => item.img));
       setLoading(false);
     }
 
@@ -436,8 +486,11 @@ function FeaturedWork() {
               <img
                 src={item.img}
                 alt={item.label}
+                width={item.width}
+                height={item.height}
                 loading="lazy"
                 decoding="async"
+                sizes="(max-width: 520px) 100vw, (max-width: 760px) 50vw, (max-width: 1100px) 33vw, 25vw"
                 draggable={false}
                 style={{
                   width: "100%",

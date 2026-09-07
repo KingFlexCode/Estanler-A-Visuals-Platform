@@ -12,10 +12,10 @@ function buildPublicUrl(path) {
 
 function mapPortfolioImage(image) {
   const gridPath =
-    image.display_path || image.original_path || image.thumbnail_path;
+    image.display_path || image.thumbnail_path || image.original_path;
 
   const lightboxPath =
-    image.original_path || image.display_path || image.thumbnail_path;
+    image.display_path || image.thumbnail_path || image.original_path;
 
   return {
     id: image.id,
@@ -23,6 +23,8 @@ function mapPortfolioImage(image) {
     label: image.title || image.file_name || "Portfolio image",
     img: buildPublicUrl(gridPath),
     fullImg: buildPublicUrl(lightboxPath),
+    width: image.display_width || image.thumbnail_width || undefined,
+    height: image.display_height || image.thumbnail_height || undefined,
     aspect: image.aspect_ratio || "4 / 5",
     objectPosition: `${image.object_position_x ?? 50}% ${
       image.object_position_y ?? 15
@@ -235,8 +237,11 @@ function PhotoTile({ item, onSelect }) {
       <img
         src={item.img}
         alt={item.label}
+        width={item.width}
+        height={item.height}
         loading="lazy"
         decoding="async"
+        sizes="(max-width: 600px) 100vw, (max-width: 900px) 50vw, (max-width: 1250px) 33vw, 25vw"
         style={{
           width: "100%",
           height: "auto",
@@ -288,6 +293,26 @@ function Lightbox({ item, items, onClose, onNav }) {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [index, items, onClose, onNav]);
+
+  useEffect(() => {
+    const adjacentSources = [items[index - 1], items[index + 1]]
+      .map((photo) => photo?.fullImg || photo?.img)
+      .filter(Boolean);
+
+    const preloads = adjacentSources.map((source) => {
+      const image = new Image();
+      image.decoding = "async";
+      image.src = source;
+      return image;
+    });
+
+    return () => {
+      preloads.forEach((image) => {
+        image.onload = null;
+        image.onerror = null;
+      });
+    };
+  }, [index, items]);
 
   return (
     <div
@@ -348,10 +373,17 @@ function Lightbox({ item, items, onClose, onNav }) {
       <img
         src={item.fullImg || item.img}
         alt={item.label}
+        width={item.width}
+        height={item.height}
+        loading="eager"
+        fetchPriority="high"
+        decoding="async"
         onClick={(event) => event.stopPropagation()}
         style={{
           maxWidth: "92vw",
           maxHeight: "88vh",
+          width: "auto",
+          height: "auto",
           objectFit: "contain",
           background: COLORS.bg,
         }}
@@ -395,7 +427,9 @@ export default function Gallery() {
 
       const { data, error } = await supabase
         .from("portfolio_images")
-        .select("*")
+        .select(
+          "id,category,title,file_name,display_path,thumbnail_path,original_path,display_width,display_height,thumbnail_width,thumbnail_height,aspect_ratio,object_position_x,object_position_y,zoom,display_order,created_at",
+        )
         .eq("is_visible", true)
         .neq("category", "unlisted")
         .order("display_order", { ascending: true })
