@@ -1,0 +1,5 @@
+[functions]
+  directory = "netlify/functions"
+
+[functions."supabase-keep-alive"]
+  schedule = "0 */8 * * *"
