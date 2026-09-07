@@ -1,0 +1,99 @@
+name: EST-79 Finalize Source
+
+on:
+  push:
+    branches:
+      - est-79-image-performance-cleanup
+    paths:
+      - .github/workflows/est79-finalize-source.yml
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out EST-79
+        uses: actions/checkout@v4
+        with:
+          ref: est-79-image-performance-cleanup
+          fetch-depth: 0
+
+      - name: Materialize EST-79 transforms into source
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          import path from "node:path";
+          import { imagePerformanceCleanup } from "./src/lib/est79/viteImagePerformanceCleanup.js";
+
+          const plugin = imagePerformanceCleanup();
+          const root = process.cwd();
+
+          for (const relativePath of ["src/pages/Home.jsx", "src/pages/Gallery.jsx"]) {
+            const absolutePath = path.join(root, relativePath);
+            const source = fs.readFileSync(absolutePath, "utf8");
+            const result = plugin.transform(source, absolutePath);
+            if (!result?.code) throw new Error(`EST-79 did not transform ${relativePath}`);
+            fs.writeFileSync(absolutePath, result.code);
+          }
+
+          const aboutPath = path.join(root, "src/pages/About.jsx");
+          let about = fs.readFileSync(aboutPath, "utf8");
+          about = about.replace(
+            'import { COLORS, BASE } from "../lib/constants";',
+            'import { COLORS } from "../lib/constants";',
+          );
+          about = about.replace(
+            '                loading="lazy"\n                decoding="async"',
+            '                width={1714}\n                height={2400}\n                loading="eager"\n                fetchPriority="high"\n                decoding="async"',
+          );
+          fs.writeFileSync(aboutPath, about);
+
+          const vitePath = path.join(root, "vite.config.js");
+          let vite = fs.readFileSync(vitePath, "utf8");
+          vite = vite.replace(
+            'import { imagePerformanceCleanup } from "./src/lib/est79/viteImagePerformanceCleanup.js";\n',
+            "",
+          );
+          vite = vite.replace('    imagePerformanceCleanup(),\n', "");
+          fs.writeFileSync(vitePath, vite);
+
+          fs.rmSync(path.join(root, "src/lib/est79/viteImagePerformanceCleanup.js"));
+          fs.rmSync(path.join(root, ".github/workflows/est79-finalize-source.yml"));
+          NODE
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Build production app
+        run: npm run build
+
+      - name: Verify About WebP bundle
+        run: |
+          test ! -e src/assets/my_about_picture.png
+          test -e src/assets/my_about_picture.webp
+          test "$(wc -c < src/assets/my_about_picture.webp)" -lt 819200
+          find dist/assets -maxdepth 1 -name 'my_about_picture-*.webp' -print -quit | grep -q .
+          if find dist/assets -maxdepth 1 -name 'my_about_picture-*.png' -print -quit | grep -q .; then
+            echo "Unexpected About PNG in production bundle"
+            exit 1
+          fi
+
+      - name: Commit finalized EST-79 source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "EST-79 finalize image performance source changes"
+          git push origin HEAD:est-79-image-performance-cleanup
