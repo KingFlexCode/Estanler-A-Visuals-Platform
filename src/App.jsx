@@ -15,6 +15,7 @@ import About from "./pages/About";
 import Book from "./pages/Book";
 import Shop from "./pages/Shop";
 import ClientGalleryViewer from "./pages/ClientGalleryViewer";
+import QuickShareViewer from "./pages/QuickShareViewer";
 import AdminLogin from "./pages/admin/Login";
 import Dashboard from "./pages/admin/Dashboard";
 import Galleries from "./pages/admin/Galleries";
@@ -76,7 +77,8 @@ function Layout() {
   const { pathname } = useLocation();
   const showNav =
     !NO_NAV_PATHS.some((path) => pathname.startsWith(path)) &&
-    !pathname.startsWith("/gallery/");
+    !pathname.startsWith("/gallery/") &&
+    !pathname.startsWith("/selection/");
   return (
     <>
       <FontLoader />
@@ -91,6 +93,7 @@ function Layout() {
         <Route path="/book" element={<Book />} />
         <Route path="/shop" element={<Shop />} />
         <Route path="/gallery/:slug" element={<ClientGalleryViewer />} />
+        <Route path="/selection/:token" element={<QuickShareViewer />} />
         <Route path="/admin/login" element={<AdminLogin />} />
         <Route
           path="/admin"
