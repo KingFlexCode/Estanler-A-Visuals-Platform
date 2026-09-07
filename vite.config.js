@@ -116,8 +116,5 @@ function stabilizePublicGalleryPhotoCards() {
 }
 
 export default defineConfig({
-  plugins: [
-    stabilizePublicGalleryPhotoCards(),
-    react(),
-  ],
+  plugins: [stabilizePublicGalleryPhotoCards(), react()],
 });
